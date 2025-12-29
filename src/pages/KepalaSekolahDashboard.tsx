@@ -6,6 +6,7 @@ import autoTable from 'jspdf-autotable';
 import { User, SupervisionReport, storageService, isUserOnline } from '../services/storage';
 import { ADMINISTRATION_OBSERVATION_INSTRUMENT, PLANNING_OBSERVATION_INSTRUMENT, PELAKSANAAN_OBSERVATION_INSTRUMENT } from '../constants/documents';
 import RunningText from '../components/RunningText';
+import { firebaseService } from '../services/firebaseService';
 
 export const KSPlanningDeepList = () => {
   const navigate = useNavigate();
@@ -96,6 +97,7 @@ export const KSPlanningDeepList = () => {
 export const KSPelaksanaanList = () => {
   const navigate = useNavigate();
   const [teachers, setTeachers] = useState<User[]>([]);
+  const [supervisions, setSupervisions] = useState<Record<string, SupervisionReport[]>>({});
 
   useEffect(() => {
     const currentUser = storageService.getCurrentUser();
@@ -107,6 +109,13 @@ export const KSPelaksanaanList = () => {
         u.school?.toLowerCase() === currentUser.school?.toLowerCase()
       );
       setTeachers(schoolTeachers);
+
+      const supData: Record<string, SupervisionReport[]> = {};
+      schoolTeachers.forEach((t: User) => {
+        const allSups = storageService.getSupervisions(t.nip);
+        supData[t.nip] = allSups.filter((s: SupervisionReport) => s.type === 'observation');
+      });
+      setSupervisions(supData);
     }
   }, []);
 
@@ -123,28 +132,39 @@ export const KSPelaksanaanList = () => {
       </div>
 
       <div className="grid gap-4">
-        {teachers.map((teacher: User) => (
-          <div key={teacher.nip} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-                <FileText size={24} />
+        {teachers.map((teacher: User) => {
+          const teacherSupervisions = supervisions[teacher.nip] || [];
+          const lastSupervision = teacherSupervisions.length > 0 ? teacherSupervisions[teacherSupervisions.length - 1] : null;
+          return (
+            <div key={teacher.nip} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                  <FileText size={24} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800">{teacher.name}</h3>
+                  <p className="text-sm text-gray-500">NIP: {teacher.nip}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold text-gray-800">{teacher.name}</h3>
-                <p className="text-sm text-gray-500">NIP: {teacher.nip}</p>
+              <div className="text-right">
+                {lastSupervision ? (
+                  <div className="mb-2">
+                    <span className="text-sm text-gray-500">Terakhir: {lastSupervision.date}</span>
+                    <div className="text-sm font-semibold text-green-600">Skor: {lastSupervision.finalScore.toFixed(1)}%</div>
+                  </div>
+                ) : (
+                  <div className="mb-2 text-sm text-gray-400">Belum ada data</div>
+                )}
+                <button 
+                  onClick={() => navigate(`/kepala-sekolah/pelaksanaan/${teacher.nip}`)}
+                  className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                >
+                  {lastSupervision ? 'Lihat / Edit' : 'Input Supervisi'}
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => navigate(`/kepala-sekolah/pelaksanaan/${teacher.nip}`)}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
-              >
-                Input Supervisi
-              </button>
-            </div>
-          </div>
-        ))}
-
+          );
+        })}
         {teachers.length === 0 && (
           <div className="text-center py-10 text-gray-500">Tidak ada data guru.</div>
         )}
@@ -251,6 +271,7 @@ export const KSPelaksanaanForm = () => {
       grade
     };
     storageService.saveSupervision(report);
+    firebaseService.saveSupervision({ ...report, school: teacher.school || '' });
     alert('Observasi pelaksanaan berhasil disimpan!');
     navigate('/kepala-sekolah/pelaksanaan');
   };
@@ -594,6 +615,7 @@ export const KSPelaksanaanForm = () => {
 export const KSReportsPage = () => {
   const navigate = useNavigate();
   const [teachers, setTeachers] = useState<User[]>([]);
+  const [supervisions, setSupervisions] = useState<Record<string, SupervisionReport[]>>({});
 
   useEffect(() => {
     const currentUser = storageService.getCurrentUser();
@@ -605,6 +627,13 @@ export const KSReportsPage = () => {
         u.school?.toLowerCase() === currentUser.school?.toLowerCase()
       );
       setTeachers(schoolTeachers);
+
+      const supData: Record<string, SupervisionReport[]> = {};
+      schoolTeachers.forEach((t: User) => {
+        const allSups = storageService.getSupervisions(t.nip);
+        supData[t.nip] = allSups.filter((s: SupervisionReport) => s.type === 'administration');
+      });
+      setSupervisions(supData);
     }
   }, []);
 
@@ -621,26 +650,39 @@ export const KSReportsPage = () => {
       </div>
 
       <div className="grid gap-4">
-        {teachers.map((teacher: User) => (
-          <div key={teacher.nip} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-                <FileText size={24} />
+        {teachers.map((teacher: User) => {
+          const teacherSupervisions = supervisions[teacher.nip] || [];
+          const lastSupervision = teacherSupervisions.length > 0 ? teacherSupervisions[teacherSupervisions.length - 1] : null;
+          return (
+            <div key={teacher.nip} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                  <FileText size={24} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800">{teacher.name}</h3>
+                  <p className="text-sm text-gray-500">NIP: {teacher.nip}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-semibold text-gray-800">{teacher.name}</h3>
-                <p className="text-sm text-gray-500">NIP: {teacher.nip}</p>
+              <div className="text-right">
+                {lastSupervision ? (
+                  <div className="mb-2">
+                    <span className="text-sm text-gray-500">Terakhir: {lastSupervision.date}</span>
+                    <div className="text-sm font-semibold text-green-600">Skor: {lastSupervision.finalScore.toFixed(1)}%</div>
+                  </div>
+                ) : (
+                  <div className="mb-2 text-sm text-gray-400">Belum ada data</div>
+                )}
+                <button 
+                  onClick={() => navigate(`/kepala-sekolah/laporan/${teacher.nip}`)}
+                  className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                >
+                  {lastSupervision ? 'Lihat / Edit' : 'Input Supervisi'}
+                </button>
               </div>
             </div>
-            <button 
-              onClick={() => navigate(`/kepala-sekolah/laporan/${teacher.nip}`)}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
-            >
-              Input Supervisi
-            </button>
-          </div>
-        ))}
-
+          );
+        })}
         {teachers.length === 0 && (
           <div className="text-center py-10 text-gray-500">Tidak ada data guru.</div>
         )}
@@ -1071,23 +1113,19 @@ export const KSReportForm = () => {
         <div className="mb-4">
             <label className="block font-bold mb-1">Kesimpulan:</label>
             <textarea 
-                className="w-full border-b border-gray-400 p-2 min-h-[80px] focus:outline-none" 
+                className="w-full border rounded p-2 min-h-[100px] focus:outline-none" 
                 value={conclusion} 
                 onChange={e => setConclusion(e.target.value)} 
             />
-            <div className="border-b border-gray-400 mt-2"></div>
-            <div className="border-b border-gray-400 mt-6"></div>
         </div>
 
         <div className="mb-4">
             <label className="block font-bold mb-1">Tindak Lanjut:</label>
             <textarea 
-                className="w-full border-b border-gray-400 p-2 min-h-[80px] focus:outline-none" 
+                className="w-full border rounded p-2 min-h-[100px] focus:outline-none" 
                 value={followUp} 
                 onChange={e => setFollowUp(e.target.value)} 
             />
-            <div className="border-b border-gray-400 mt-2"></div>
-            <div className="border-b border-gray-400 mt-6"></div>
         </div>
       </div>
 
@@ -1203,6 +1241,7 @@ export const KSPlanningDeepForm = () => {
     };
     
     storageService.saveSupervision(report);
+    firebaseService.saveSupervision({ ...report, school: teacher.school || '' });
     alert('Laporan Supervisi Perencanaan berhasil disimpan!');
     navigate('/kepala-sekolah/perencanaan');
   };
@@ -1554,7 +1593,6 @@ export const KSPlanningDeepForm = () => {
 const KSDashboardHome = () => {
   const navigate = useNavigate();
   const [teachers, setTeachers] = useState<User[]>([]);
-  const [onlineTeachers, setOnlineTeachers] = useState<User[]>([]);
   const [latestReports, setLatestReports] = useState<SupervisionReport[]>([]);
 
   useEffect(() => {
@@ -1567,17 +1605,24 @@ const KSDashboardHome = () => {
         u.school?.toLowerCase() === currentUser.school?.toLowerCase()
       );
       setTeachers(schoolTeachers);
-      setOnlineTeachers(schoolTeachers.filter(t => isUserOnline(t.lastSeen)));
 
-      const reports: SupervisionReport[] = [];
-      schoolTeachers.forEach(t => {
-        const sups = storageService.getSupervisions(t.nip);
-        if (sups && sups.length > 0) {
-          reports.push(...sups);
-        }
+      const unsubscribeUsers = firebaseService.subscribeUsers((users) => {
+        const filtered = users.filter(u => 
+          u.role === 'guru' && 
+          u.active && 
+          u.school?.toLowerCase() === currentUser.school?.toLowerCase()
+        );
+        setTeachers(filtered);
       });
-      reports.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setLatestReports(reports.slice(0, 5));
+
+      const unsubscribeSup = firebaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
+        setLatestReports(reports.slice(0, 5));
+      });
+
+      return () => {
+        unsubscribeUsers();
+        unsubscribeSup();
+      };
     }
   }, []);
 
@@ -1603,6 +1648,16 @@ const KSDashboardHome = () => {
             <p className="text-sm text-gray-500">Instrumen Rencana Pembelajaran Mendalam</p>
           </div>
         </button>
+
+        <button onClick={() => navigate('/kepala-sekolah/laporan')} className="flex items-center gap-4 rounded-xl border border-gray-200 p-4 text-left transition-all hover:border-purple-500 hover:bg-purple-50">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
+            <FileText size={24} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-gray-900">Laporan Instrumen Supervisi</h3>
+            <p className="text-sm text-gray-500">Daftar Guru untuk Input Supervisi</p>
+          </div>
+        </button>
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -1614,9 +1669,7 @@ const KSDashboardHome = () => {
                 <div className="font-medium">{t.name}</div>
                 <div className="text-xs text-gray-500">NIP: {t.nip}</div>
               </div>
-              <button onClick={() => navigate(`/kepala-sekolah/perencanaan/${t.nip}`)} className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
-                Instrumen Supervisi
-              </button>
+              <span className={`text-xs rounded px-2 py-1 ${isUserOnline(t.lastSeen) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{isUserOnline(t.lastSeen) ? 'Online' : 'Offline'}</span>
             </div>
           ))}
 
@@ -1627,25 +1680,6 @@ const KSDashboardHome = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <h3 className="mb-2 font-semibold">Guru Online</h3>
-          {onlineTeachers.length === 0 ? (
-            <div className="text-sm text-gray-500">Tidak ada guru yang online.</div>
-          ) : (
-            <div className="grid gap-2">
-              {onlineTeachers.map(t => (
-                <div key={t.nip} className="flex items-center justify-between rounded-lg border border-gray-100 p-2">
-                  <div className="text-sm">
-                    <div className="font-medium">{t.name}</div>
-                    <div className="text-xs text-gray-500">NIP: {t.nip}</div>
-                  </div>
-                  <span className="text-xs rounded bg-green-100 px-2 py-1 text-green-700">Online</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <h3 className="mb-2 font-semibold">Laporan Terbaru</h3>
           {latestReports.length === 0 ? (
@@ -1671,6 +1705,13 @@ const KSDashboardHome = () => {
 
 const KepalaSekolahDashboard = () => {
   const location = useLocation();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const user = storageService.getCurrentUser();
+    setCurrentUser(user);
+  }, []);
+
   const isActive = (path: string) => (location.pathname === path ? 'bg-indigo-700' : '');
 
   return (
@@ -1713,7 +1754,9 @@ const KepalaSekolahDashboard = () => {
                   ? 'Observasi Pelaksanaan Pembelajaran'
                   : 'Laporan Instrumen Supervisi'}
           </h1>
-          <div className="text-gray-600">Selamat datang, Kepala Sekolah</div>
+          <div className="text-gray-600">
+            Selamat datang, {currentUser ? `${currentUser.name} Kepala ${currentUser.school || ''}` : 'Kepala Sekolah'}
+          </div>
         </header>
 
         <div className="rounded-lg bg-white p-6 shadow-sm">

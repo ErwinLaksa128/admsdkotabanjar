@@ -1,10 +1,11 @@
 import { db } from '../lib/firebase';
-import { doc, onSnapshot, setDoc, deleteDoc, collection, updateDoc } from 'firebase/firestore';
-import { User } from './storage';
+import { doc, onSnapshot, setDoc, deleteDoc, collection, updateDoc, query, where, orderBy } from 'firebase/firestore';
+import { User, SupervisionReport } from './storage';
 
 const SETTINGS_COLLECTION = 'settings';
 const RUNNING_TEXT_DOC = 'running_text';
 const USERS_COLLECTION = 'users';
+const SUPERVISIONS_COLLECTION = 'supervisions';
 
 export const firebaseService = {
   // Subscribe to Running Text changes (Realtime)
@@ -95,5 +96,49 @@ export const firebaseService = {
       console.error("Error updating heartbeat:", error);
       // Don't throw, just ignore if fails (e.g. user deleted)
     }
+  },
+
+  // Save Supervision Report (Realtime sync)
+  saveSupervision: async (report: SupervisionReport & { school?: string }) => {
+    try {
+      const docRef = doc(db, SUPERVISIONS_COLLECTION, report.id);
+      const cleanReport = JSON.parse(JSON.stringify(report));
+      await setDoc(docRef, cleanReport);
+      return true;
+    } catch (error) {
+      console.error('Error saving supervision:', error);
+      // Do not throw to avoid blocking local save; just log
+      return false;
+    }
+  },
+
+  // Subscribe to supervision reports by school (latest first)
+  subscribeSupervisionsBySchool: (school: string, callback: (reports: SupervisionReport[]) => void) => {
+    const colRef = collection(db, SUPERVISIONS_COLLECTION);
+    const q = query(colRef, where('school', '==', school), orderBy('date', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const reports: SupervisionReport[] = [];
+      snapshot.forEach((docSnap) => {
+        reports.push(docSnap.data() as SupervisionReport);
+      });
+      callback(reports);
+    }, (error) => {
+      console.error('Error subscribing supervisions:', error);
+    });
+  },
+
+  // Subscribe to ALL supervision reports (for Pengawas)
+  subscribeAllSupervisions: (callback: (reports: SupervisionReport[]) => void) => {
+    const colRef = collection(db, SUPERVISIONS_COLLECTION);
+    const q = query(colRef, orderBy('date', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const reports: SupervisionReport[] = [];
+      snapshot.forEach((docSnap) => {
+        reports.push(docSnap.data() as SupervisionReport);
+      });
+      callback(reports);
+    }, (error) => {
+      console.error('Error subscribing all supervisions:', error);
+    });
   }
 };

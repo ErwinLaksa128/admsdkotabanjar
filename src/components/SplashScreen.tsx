@@ -26,7 +26,7 @@ const SplashScreen = ({ onFinish }: SplashScreenProps) => {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 to-slate-900 text-white transition-opacity duration-700 ${
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 to-slate-900 text-white transition-opacity duration-700 min-h-[100svh] ${
         fade ? 'opacity-0' : 'opacity-100'
       }`}
     >
@@ -39,11 +39,11 @@ const SplashScreen = ({ onFinish }: SplashScreenProps) => {
         />
       </div>
 
-      <h1 className="mb-2 text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white animate-pulse">
+      <h1 className="mb-2 text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white animate-pulse text-center px-4">
         SISTEM ADMINISTRASI GURU
       </h1>
       
-      <p className="text-blue-300 text-sm tracking-widest uppercase mb-12">
+      <p className="text-blue-300 text-sm tracking-widest uppercase mb-12 text-center px-4">
         Digitalisasi • Otomasi • Terintegrasi
       </p>
 

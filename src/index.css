@@ -12,6 +12,14 @@ body {
   min-height: 100vh;
 }
 
+/* Fix viewport height on mobile browsers to keep vertical centering */
+@supports (height: 100svh) {
+  body { min-height: 100svh; }
+}
+@supports (height: 100dvh) {
+  body { min-height: 100dvh; }
+}
+
 @keyframes grow {
   0% { transform: scaleX(0); }
   50% { transform: scaleX(1); }
