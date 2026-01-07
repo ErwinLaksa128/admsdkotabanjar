@@ -27,7 +27,7 @@ export const googleDriveService = {
   gapiInited: false,
   gisInited: false,
 
-  init: async (callback: () => void) => {
+  init: async (callback: (isSignedIn: boolean) => void) => {
     if (!GOOGLE_CONFIG.CLIENT_ID || !GOOGLE_CONFIG.API_KEY) {
       console.warn('Google Drive Client ID or API Key is missing');
       return;
@@ -40,8 +40,24 @@ export const googleDriveService = {
           apiKey: GOOGLE_CONFIG.API_KEY,
           discoveryDocs: [GOOGLE_CONFIG.DISCOVERY_DOC],
         });
+        
+        // Restore token if exists
+        const savedToken = localStorage.getItem('gdrive_token');
+        if (savedToken) {
+            try {
+                const token = JSON.parse(savedToken);
+                window.gapi.client.setToken(token);
+            } catch (e) {
+                console.error('Invalid saved token', e);
+                localStorage.removeItem('gdrive_token');
+            }
+        }
+
         googleDriveService.gapiInited = true;
-        if (googleDriveService.gisInited) callback();
+        if (googleDriveService.gisInited) {
+             const isSignedIn = !!window.gapi.client.getToken();
+             callback(isSignedIn);
+        }
       });
     }
 
@@ -53,7 +69,10 @@ export const googleDriveService = {
         callback: '', // defined later
       });
       googleDriveService.gisInited = true;
-      if (googleDriveService.gapiInited) callback();
+      if (googleDriveService.gapiInited) {
+         const isSignedIn = !!window.gapi.client.getToken();
+         callback(isSignedIn);
+      }
     }
   },
 
@@ -69,6 +88,8 @@ export const googleDriveService = {
           reject(resp);
           return;
         }
+        // Save token to persist session
+        localStorage.setItem('gdrive_token', JSON.stringify(resp));
         resolve();
       };
 
@@ -88,6 +109,7 @@ export const googleDriveService = {
     if (token !== null) {
       window.google.accounts.oauth2.revoke(token.access_token);
       window.gapi.client.setToken('');
+      localStorage.removeItem('gdrive_token');
     }
   },
 
@@ -221,6 +243,99 @@ export const googleDriveService = {
       console.error('Download error', err);
       throw err;
     }
+  },
+
+  createShortcut: async (name: string, targetId: string, parentId?: string) => {
+    if (!window.gapi || !window.gapi.client) {
+      throw new Error('Google API client not initialized');
+    }
+    const token = window.gapi.client.getToken();
+    if (!token || !token.access_token) {
+      throw new Error('Google Drive access token missing');
+    }
+    const metadata: Record<string, any> = {
+      name,
+      mimeType: 'application/vnd.google-apps.shortcut',
+      shortcutDetails: { targetId }
+    };
+    if (parentId) metadata.parents = [parentId];
+    const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: new Headers({
+        Authorization: 'Bearer ' + token.access_token,
+        'Content-Type': 'application/json'
+      }),
+      body: JSON.stringify(metadata)
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt || 'Failed to create shortcut');
+    }
+    return await res.json();
+  },
+
+  createFolder: async (folderName: string, parentId?: string) => {
+    if (!window.gapi || !window.gapi.client) {
+      throw new Error('Google API client not initialized');
+    }
+    const accessToken = window.gapi.client.getToken()?.access_token;
+    if (!accessToken) throw new Error('Access token missing');
+
+    const metadata: any = {
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+    };
+    if (parentId) {
+      metadata.parents = [parentId];
+    }
+
+    const response = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,webViewLink', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(metadata),
+    });
+
+    if (!response.ok) throw new Error('Failed to create folder');
+    return await response.json();
+  },
+
+  uploadFile: async (fileBlob: Blob, filename: string, mimeType: string, parentId?: string) => {
+    if (!window.gapi || !window.gapi.client) {
+      throw new Error('Google API client not initialized');
+    }
+    
+    const accessToken = window.gapi.client.getToken()?.access_token;
+    if (!accessToken) {
+      throw new Error('Google Drive access token missing');
+    }
+
+    const metadata: any = {
+      name: filename,
+      mimeType: mimeType,
+    };
+    
+    if (parentId) {
+        metadata.parents = [parentId];
+    }
+
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', fileBlob);
+
+    const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink', {
+      method: 'POST',
+      headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+      body: form,
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to upload file');
+    }
+    
+    return await response.json();
   },
 
   // Helper to get all local data

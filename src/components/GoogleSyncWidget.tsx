@@ -12,8 +12,12 @@ const GoogleSyncWidget = () => {
   useEffect(() => {
     if (GOOGLE_CONFIG.CLIENT_ID && GOOGLE_CONFIG.API_KEY) {
       setIsConfigured(true);
-      googleDriveService.init(() => {
+      googleDriveService.init((signedIn) => {
         // Init callback
+        if (signedIn) {
+            setIsSignedIn(true);
+            setStatus('Terhubung ke Google Drive');
+        }
       });
     }
   }, []);
@@ -129,7 +133,8 @@ const GoogleSyncWidget = () => {
                   Status aplikasi di Google Console masih <strong>"Testing"</strong>. Google membatasi login hanya untuk email yang sudah didaftarkan secara manual.
                 </p>
                 <p className="bg-white p-2 rounded border border-red-200 text-gray-600">
-                  <strong>Solusi:</strong> Buka menu <em>OAuth consent screen</em> &gt; <em>Test users</em> di Google Cloud Console, lalu tambahkan alamat email yang ingin Anda gunakan login.
+                  <strong>Solusi 1 (Testing):</strong> Tambahkan email di menu <em>OAuth consent screen</em> &gt; <em>Test users</em>.<br/>
+                  <strong>Solusi 2 (Public):</strong> Klik tombol <strong>"PUBLISH APP"</strong> di <em>OAuth consent screen</em> agar semua akun bisa login (mungkin perlu verifikasi Google).
                 </p>
               </div>
 
@@ -172,6 +177,19 @@ const GoogleSyncWidget = () => {
             <span className="text-xs font-medium">Ambil dari Drive</span>
           </button>
         </div>
+      )}
+      
+      {isSignedIn && (
+        <button 
+          onClick={() => {
+            googleDriveService.signOut();
+            setIsSignedIn(false);
+            setStatus('');
+          }}
+          className="mt-3 w-full text-center text-xs text-gray-400 hover:text-red-500"
+        >
+          Putuskan Koneksi
+        </button>
       )}
     </div>
   );

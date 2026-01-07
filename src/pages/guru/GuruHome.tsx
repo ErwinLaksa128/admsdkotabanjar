@@ -1,17 +1,92 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  FileText, Users, BookOpen, Settings, Plus, Edit, Trash, ArrowLeft,
-  X, ExternalLink, Download, Loader2, CheckCircle
+  FileText, Users, BookOpen, Plus, Edit, Trash, ArrowLeft,
+  X, ExternalLink, Download, Loader2, CheckCircle, ClipboardCheck
 } from 'lucide-react';
 import { storageService, User } from '../../services/storage';
+import { firebaseService } from '../../services/firebaseService';
 import { studentService, Student } from '../../services/studentService';
-import { generateDocument, GasResponse } from '../../services/api';
+import { generateDocument, GasResponse, pjokFolders } from '../../services/api';
+import { googleDriveService } from '../../services/googleDrive';
 import CameraCapture from '../../components/CameraCapture';
 import GoogleSyncWidget from '../../components/GoogleSyncWidget';
 import { ADMIN_DOCS } from '../../constants/documents';
 
+
+// Map of available Modul Ajar files per class
+const PJOK_MODULES: Record<string, { label: string; file: string }[]> = {
+  '1': [
+    { label: '1.1.1 Gerak Dasar Berpindah Tempat', file: 'Kelas_1.1.1_GERAK_DASAR_BERPINDAH_TEMPAT.docx' },
+    { label: '1.1.2 Gerak Dasar Ditempat', file: 'Kelas_1.1.2_GERAK_DASAR_DITEMPAT.docx' },
+    { label: '1.1.3 Gerak Dasar Menggunakan Alat', file: 'Kelas_1.1.3_GERAK_DASAR_MENGGUNAKAN_ALAT.docx' },
+    { label: '1.2 Senam Lantai', file: 'Kelas_1.2_SENAM_LANTAI.docx' },
+    { label: '1.3 Gerak Berirama', file: 'Kelas_1.3_GERAK_BERIRAMA.docx' },
+    { label: '1.4 Olahraga Air', file: 'Kelas_1.4_OLAHRAGA_AIR.docx' },
+    { label: '1.5 Kebugaran Jasmani', file: 'Kelas_1.5_KEBUGARAN_JASMANI.docx' },
+    { label: '1.6 Perilaku Hidup Sehat', file: 'Kelas_1.6_PERILAKU_HIDUP_SEHAT.docx' },
+  ],
+  '2': [
+    { label: '2.1 Pola Gerak Dasar Lokomotor', file: 'Kelas_2.1_LOKOMOTOR.docx' },
+    { label: '2.2 Pola Gerak Dasar Non-Lokomotor', file: 'Kelas_2.2_NONLOKOMOTOR.docx' },
+    { label: '2.3 Pola Gerak Dasar Manipulatif', file: 'Kelas_2.3_MANIPULATIF.docx' },
+    { label: '2.4 Senam', file: 'Kelas_2.4_SENAM.docx' },
+    { label: '2.5 Gerak Berirama', file: 'Kelas_2.5_GERAK_BERIRAMA.docx' },
+    { label: '2.6 Olahraga Air', file: 'Kelas_2.6_OLAHRAGA_AIR.docx' },
+    { label: '2.7 Kebugaran Jasmani', file: 'Kelas_2.7_KEBUGARAN_JASMANI.docx' },
+    { label: '2.8 Cara Hidup Sehat', file: 'Kelas_2.8_HIDUP_SEHAT.docx' },
+  ],
+  '3': [
+    { label: '3.1 Pola Gerak Dasar Lokomotor', file: 'Kelas_3.1_LOKOMOTOR.docx' },
+    { label: '3.2 Pola Gerak Dasar Non-Lokomotor', file: 'Kelas_3.2_NONLOKOMOTOR.docx' },
+    { label: '3.3 Pola Gerak Dasar Manipulatif', file: 'Kelas_3.3_MANIPULATIF.docx' },
+    { label: '3.4 Senam Lantai', file: 'Kelas_3.4_SENAM_LANTAI.docx' },
+    { label: '3.5 Gerak Berirama', file: 'Kelas_3.5_GERAK_BERIRAMA.docx' },
+    { label: '3.6 Olahraga Air', file: 'Kelas_3.6_OLAHRAGA_AIR.docx' },
+    { label: '3.7 Kebugaran Jasmani', file: 'Kelas_3.7_KEBUGARAN_JASMANI.docx' },
+    { label: '3.8 Kesehatan', file: 'Kelas_3.8_KESEHATAN.docx' },
+  ],
+  '4': [
+    { label: '4.1 Permainan Invasi', file: 'Kelas_4.1_INVASI.docx' },
+    { label: '4.2 Permainan Net', file: 'Kelas_4.2_NET.docx' },
+    { label: '4.3 Permainan Lapangan', file: 'Kelas_4.3_LAPANGAN.docx' },
+    { label: '4.4 Beladiri', file: 'Kelas_4.4_BELADIRI.docx' },
+    { label: '4.5 Atletik', file: 'Kelas_4.5_ATLETIK.docx' },
+    { label: '4.6 Senam Lantai', file: 'Kelas_4.6_SENAM_LANTAI.docx' },
+    { label: '4.7 Gerak Berirama', file: 'Kelas_4.7_GERAK_BERIRAMA.docx' },
+    { label: '4.8 Olahraga Air', file: 'Kelas_4.8_OLAHRAGA_AIR.docx' },
+    { label: '4.9 Kebugaran Jasmani', file: 'Kelas_4.9_KEBUGARAN_JASMANI.docx' },
+    { label: '4.10 Kesehatan', file: 'Kelas_4.10_KESEHATAN.docx' },
+  ],
+  '5': [
+    { label: '5.1 Permainan Invasi', file: 'Kelas_5.1_INVASI.docx' },
+    { label: '5.2 Permainan Net', file: 'Kelas_5.2_NET.docx' },
+    { label: '5.3 Permainan Lapangan', file: 'Kelas_5.3_LAPANGAN.docx' },
+    { label: '5.4 Beladiri', file: 'Kelas_5.4_BELADIRI.docx' },
+    { label: '5.5 Atletik', file: 'Kelas_5.5_ATLETIK.docx' },
+    { label: '5.6 Senam', file: 'Kelas_5.6_SENAM.docx' },
+    { label: '5.7 Gerak Berirama', file: 'Kelas_5.7_GERAK_BERIRAMA.docx' },
+    { label: '5.8 Olahraga Air', file: 'Kelas_5.8_OLAHRAGA_AIR.docx' },
+    { label: '5.9 Kebugaran Jasmani', file: 'Kelas_5.9_KEBUGARAN_JASMANI.docx' },
+    { label: '5.10 Kesehatan', file: 'Kelas_5.10_KESEHATAN.docx' },
+  ],
+  '6': [
+    { label: '6.1 Permainan Invasi', file: 'Kelas_6.1_INVASI.docx' },
+    { label: '6.2 Permainan Net', file: 'Kelas_6.2_NET.docx' },
+    { label: '6.3 Permainan Lapangan', file: 'Kelas_6.3_LAPANGAN.docx' },
+    { label: '6.4 Beladiri', file: 'Kelas_6.4_BELADIRI.docx' },
+    { label: '6.5 Atletik', file: 'Kelas_6.5_ATLETIK.docx' },
+    { label: '6.6 Olahraga Tradisional', file: 'Kelas_6.6_OLTRAD.docx' },
+    { label: '6.7 Gerak Berirama', file: 'Kelas_6.7_GERAK_BERIRAMA.docx' },
+    { label: '6.8 Senam', file: 'Kelas_6.8_SENAM.docx' },
+    { label: '6.9 Kebugaran Jasmani', file: 'Kelas_6.9_KEBUGARAN_JASMANI.docx' },
+    { label: '6.10 Olahraga Air', file: 'Kelas_6.10_OLAHRAGA_AIR.docx' },
+    { label: '6.11 Kesehatan', file: 'Kelas_6.11_KESEHATAN.docx' },
+  ],
+};
+
 const GuruHome = () => {
+
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   
@@ -26,11 +101,8 @@ const GuruHome = () => {
   const [selectedClassForMapel, setSelectedClassForMapel] = useState<string>('');
   const [classes, setClasses] = useState<string[]>([]);
   
-  // Schedule State (Mock)
-  const [schedule, setSchedule] = useState<{day: string, time: string, subject: string}[]> ([
-    { day: 'Senin', time: '07:00 - 08:00', subject: 'Upacara' },
-    { day: 'Senin', time: '08:00 - 09:30', subject: 'Matematika' },
-  ]);
+  // Schedule State
+  const [schedule, setSchedule] = useState<{day: string, time: string, subject: string}[]>([]);
   const [currentTeaching, setCurrentTeaching] = useState('');
 
   // Generation State
@@ -43,7 +115,16 @@ const GuruHome = () => {
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
   const [newClassName, setNewClassName] = useState('');
   
+  // PJOK Specific State
+  const selectedPjokClass = '1';
+  const selectedPjokSemester = '1';
+  
+  // Modul Ajar Selection State
+  const [showClassSelector, setShowClassSelector] = useState(false);
+  const [pendingDocType, setPendingDocType] = useState('');
+
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [editingScheduleIndex, setEditingScheduleIndex] = useState<number | null>(null);
   const [newSchedule, setNewSchedule] = useState({ day: 'Senin', time: '08:00 - 09:30', subject: 'Matematika' });
 
   useEffect(() => {
@@ -53,11 +134,33 @@ const GuruHome = () => {
       return;
     }
     setUser(currentUser);
-    updateCurrentTeaching();
+    
+    // Load Classes (Merge from storage and existing students)
+    const storedClasses = storageService.getClasses();
+    const allStudents = studentService.getAllStudents();
+    const studentClasses = Array.from(new Set(allStudents.map(s => s.class))).filter(Boolean);
+    const allClasses = Array.from(new Set([...storedClasses, ...studentClasses])).sort();
+    setClasses(allClasses);
+
+    // Initial update will be triggered by schedule effect
     
     // Load generated docs history
     if (currentUser.nip) {
       setGeneratedDocs(storageService.getGeneratedDocs(currentUser.nip));
+      
+      // Load Schedule
+      const savedSchedule = storageService.getSchedule(currentUser.nip);
+      if (savedSchedule.length > 0) {
+        setSchedule(savedSchedule);
+      } else {
+         // Default schedule for new users
+         const defaultSchedule = [
+            { day: 'Senin', time: '07:00 - 08:00', subject: 'Upacara' },
+            { day: 'Senin', time: '08:00 - 09:30', subject: 'Matematika' },
+         ];
+         setSchedule(defaultSchedule);
+         storageService.saveSchedule(currentUser.nip, defaultSchedule);
+      }
     }
   }, []);
 
@@ -81,11 +184,62 @@ const GuruHome = () => {
     setStudents(all);
   };
 
+  useEffect(() => {
+    updateCurrentTeaching();
+    // Update status every minute
+    const interval = setInterval(updateCurrentTeaching, 60000);
+    return () => clearInterval(interval);
+  }, [schedule]);
+
   const updateCurrentTeaching = () => {
     const now = new Date();
-    const currentDay = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][now.getDay()];
-    const found = schedule.find(s => s.day === currentDay);
-    setCurrentTeaching(found ? found.subject : 'Tidak ada jadwal mengajar saat ini');
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const currentDay = days[now.getDay()];
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeVal = currentHour * 60 + currentMinute;
+
+    const todaysSchedules = schedule.filter(s => s.day === currentDay);
+    
+    if (todaysSchedules.length === 0) {
+      setCurrentTeaching('Libur / Tidak ada jadwal');
+      return;
+    }
+
+    // Sort by time to find upcoming/active
+    const parsedSchedules = todaysSchedules.map(s => {
+      // Parse "07:00 - 08:30" or "07.00 - 08.30"
+      const times = s.time.split('-').map(t => t.trim());
+      if (times.length !== 2) return { ...s, startVal: 0, endVal: 0 };
+
+      const parseTime = (timeStr: string) => {
+        const parts = timeStr.replace('.', ':').split(':');
+        return parseInt(parts[0]) * 60 + parseInt(parts[1] || '0');
+      };
+
+      return {
+        ...s,
+        startVal: parseTime(times[0]),
+        endVal: parseTime(times[1])
+      };
+    }).sort((a, b) => a.startVal - b.startVal);
+
+    // Find active schedule
+    const activeSchedule = parsedSchedules.find(s => 
+      currentTimeVal >= s.startVal && currentTimeVal < s.endVal
+    );
+
+    if (activeSchedule) {
+      setCurrentTeaching(activeSchedule.subject); // Display only subject name as requested
+    } else {
+      // Find next schedule
+      const nextSchedule = parsedSchedules.find(s => s.startVal > currentTimeVal);
+      if (nextSchedule) {
+        setCurrentTeaching(`Selanjutnya: ${nextSchedule.subject} (${nextSchedule.time})`);
+      } else {
+        setCurrentTeaching('Jadwal Selesai Hari Ini');
+      }
+    }
   };
 
   const handleProfileUpdate = (imageData: string) => {
@@ -97,7 +251,225 @@ const GuruHome = () => {
     }
   };
 
-  const handleGenerateDoc = async (docName: string) => {
+  // Batch Generation State
+  const [batchProgress, setBatchProgress] = useState<{current: number, total: number, status: string} | null>(null);
+
+  // Docs that generate 6 files (Class 1-6)
+  const CLASS_BATCH_DOCS = [
+    'Program Tahunan',
+    'Program Semester',
+    'SKL',
+    'CP dan ATP',
+    'KKTP',
+    'Agenda Harian/Jurnal Mengajar',
+    'Daftar Hadir Siswa',
+    'Daftar Nilai Siswa',
+    'Format Kegiatan Remidial',
+    'Format Kegiatan Pengayaan',
+    'Analisis Hasil Ulangan',
+    'Bank Soal',
+    'Catatan Bimbingan Konseling'
+  ];
+
+  // Docs that generate 1 file
+  const SINGLE_DOCS = [
+    'Kalender Pendidikan',
+    'Alokasi Waktu Efektif Belajar',
+    'Jadwal Pelajaran',
+    'Catatan Refleksi Pelaksanaan Pembelajaran',
+    'Buku Inventaris/Pegangan Guru',
+    'Rekap Jurnal G7KAIH',
+    'Catatan Notulen Rapat/Briefing',
+    'Buku Supervisi/Observasi'
+  ];
+
+  const handleBatchGenerate = async (docName: string, overrideClass?: string) => {
+    const isClassBatch = CLASS_BATCH_DOCS.includes(docName);
+    const isSingleDoc = SINGLE_DOCS.includes(docName);
+    // Modul Ajar: Generate all modules for selected class
+    const isModuleBatch = docName === 'RPPM/Modul Ajar PM';
+
+    if (!isClassBatch && !isModuleBatch && !isSingleDoc) return false;
+
+    setIsGenerating(true);
+    setBatchProgress({ current: 0, total: 0, status: 'Menyiapkan...' });
+
+    try {
+      let items: any[] = [];
+      
+      if (isClassBatch) {
+        // Special case for docs that need Semester 1 AND 2 (Total 12 files)
+        const DOCS_WITH_SEMESTER = [
+            'Agenda Harian/Jurnal Mengajar', 
+            'Format Kegiatan Remidial', 
+            'Format Kegiatan Pengayaan'
+        ];
+
+        if (DOCS_WITH_SEMESTER.includes(docName)) {
+             const semester1 = ['1', '2', '3', '4', '5', '6'].map(cls => ({
+                kelas: cls,
+                semester: '1',
+                materi: ''
+              }));
+             const semester2 = ['1', '2', '3', '4', '5', '6'].map(cls => ({
+                kelas: cls,
+                semester: '2',
+                materi: ''
+              }));
+              items = [...semester1, ...semester2];
+        } else {
+            // Default: Generate for all classes 1-6 (using current selected semester if relevant, but mostly general)
+            // Note: If other docs also need 12 files, add them here.
+            items = ['1', '2', '3', '4', '5', '6'].map(cls => ({
+              kelas: cls,
+              semester: selectedPjokSemester,
+              materi: ''
+            }));
+        }
+      } else if (isModuleBatch) {
+        // Generate all modules for the SELECTED class (or override)
+        const targetClass = overrideClass || selectedPjokClass;
+        const modules = PJOK_MODULES[targetClass] || [];
+        items = modules.map(m => ({
+          kelas: targetClass,
+          semester: selectedPjokSemester,
+          materi: m.file
+        }));
+      } else if (isSingleDoc) {
+        // Single item
+        items = [{
+            kelas: overrideClass || selectedPjokClass, // Support override for single docs too if needed
+            semester: selectedPjokSemester,
+            materi: ''
+        }];
+      }
+
+      if (items.length === 0) {
+        throw new Error('Tidak ada item untuk digenerate');
+      }
+
+      setBatchProgress({ current: 0, total: items.length, status: 'Menghubungkan ke Drive...' });
+
+      // Create Parent Folder
+      let parentFolderId = '';
+      const token = (window as any).gapi?.client?.getToken?.();
+      const isLoggedIn = token && token.access_token;
+
+      if (isLoggedIn) {
+        const dateLabel = new Date().toISOString().slice(0, 10);
+        // Use the exact folder name from template structure if available
+        const templateFolderName = pjokFolders[docName] || docName;
+        // Format: "1. Kalender Pendidikan - Guru (2024-01-01)"
+        const folderName = `${templateFolderName} - ${user?.name || 'Guru'} (${dateLabel})`;
+        
+        try {
+          const folder = await googleDriveService.createFolder(folderName);
+          parentFolderId = folder.id;
+        } catch (e) {
+          console.error('Failed to create parent folder', e);
+        }
+      }
+
+      const generatedFiles: any[] = [];
+      
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        setBatchProgress({ 
+          current: i + 1, 
+          total: items.length, 
+          status: `Memproses ${docName} (${i+1}/${items.length})...` 
+        });
+
+        // Generate
+        const result = await generateDocument({
+          type: docName,
+          subRole: user?.subRole || 'Guru',
+          ...item,
+          nama: user?.name,
+          nip: user?.nip,
+          sekolah: user?.school,
+          kepsek: user?.kepsekName || 'Drs. Asep',
+          nipKepsek: user?.kepsekNip || '111111',
+          pengawas: user?.pengawasName || 'Siti Aminah',
+          nipPengawas: user?.pengawasNip || '222222',
+        });
+
+        if (result.status === 'success') {
+           generatedFiles.push(result);
+
+           // Upload
+           if (isLoggedIn && parentFolderId && result.blob && result.filename) {
+             try {
+               const mimeType = result.filename.endsWith('.xlsx') 
+                  ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                  : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+               
+               await googleDriveService.uploadFile(result.blob, result.filename, mimeType, parentFolderId);
+             } catch (uploadErr) {
+               console.error('Upload failed for item ' + i, uploadErr);
+             }
+           }
+        }
+      }
+
+      setBatchProgress(null);
+      setIsGenerating(false);
+
+      let msg = `Berhasil membuat ${generatedFiles.length} dokumen.`;
+      let url = '';
+
+      if (isLoggedIn && parentFolderId) {
+        msg += ' Semua file tersimpan dalam folder "' + (pjokFolders[docName] || docName) + '" di Google Drive Anda.';
+        url = `https://drive.google.com/drive/folders/${parentFolderId}`;
+      } else if (isLoggedIn && !parentFolderId) {
+         msg += ' (Gagal membuat folder di Drive, file hanya terdownload)';
+      } else {
+         msg += ' (Tidak terupload ke Drive karena belum login)';
+      }
+
+      setGenerationResult({
+        status: 'success',
+        message: msg,
+        folderUrl: url, // Link to the Drive Folder
+        files: generatedFiles.map(f => f.filename || 'File')
+      });
+
+      // Update storage
+      if (user?.nip && url) {
+        storageService.addGeneratedDoc(user.nip, docName, url);
+        setGeneratedDocs(storageService.getGeneratedDocs(user.nip));
+      }
+
+      // Log to Firebase
+      if (user?.school) {
+        firebaseService.saveGeneratedDocLog({
+            teacherNip: user.nip || '',
+            teacherName: user.name,
+            school: user.school,
+            docType: docName,
+            fileName: `BATCH: ${generatedFiles.length} files`
+        });
+      }
+
+      return true;
+
+    } catch (err: any) {
+      console.error(err);
+      setIsGenerating(false);
+      setBatchProgress(null);
+      setGenerationResult({
+        status: 'error',
+        message: 'Gagal melakukan generation: ' + (err.message || 'Unknown error')
+      });
+      return true;
+    }
+  };
+
+  const handleGenerateDoc = async (docName: string, overrideClass?: string) => {
+    // Try batch first
+    const batchHandled = await handleBatchGenerate(docName, overrideClass);
+    if (batchHandled) return;
+
     const role = user?.subRole || 'Guru';
     
     // Set loading state
@@ -108,6 +480,10 @@ const GuruHome = () => {
       const result = await generateDocument({
         type: docName,
         subRole: role,
+        // PJOK specific params
+        kelas: selectedPjokClass,
+        semester: selectedPjokSemester,
+        materi: '', // No longer used as batch handles modules
         // Extra fields for GAS
         nama: user?.name,
         nip: user?.nip,
@@ -118,14 +494,77 @@ const GuruHome = () => {
         nipPengawas: user?.pengawasNip || '222222',
       });
       
-      setGenerationResult(result);
+      let finalFolderUrl = '';
+      let driveUploadStatus = 'skipped';
 
       // If success, mark as generated
       if (result.status === 'success' && user?.nip) {
-        // Fallback to empty string if url is missing, though it should be present on success
-        const folderUrl = result.folderUrl || '';
-        storageService.addGeneratedDoc(user.nip, docName, folderUrl);
+        
+        // 1. Cek apakah user login ke Google Drive untuk Upload Otomatis
+        const token = (window as any).gapi?.client?.getToken?.();
+        
+        if (token && token.access_token && result.blob && result.filename) {
+             try {
+                console.log('DEBUG: Uploading to Drive...', result.filename);
+                // 2. Upload Blob ke Google Drive
+                const mimeType = result.filename.endsWith('.xlsx') 
+                    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                    : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+                const uploadResult = await googleDriveService.uploadFile(
+                    result.blob, 
+                    result.filename, 
+                    mimeType
+                );
+                
+                // 3. Ambil Link dari hasil upload
+                if (uploadResult.webViewLink) {
+                    finalFolderUrl = uploadResult.webViewLink;
+                    driveUploadStatus = 'success';
+                }
+             } catch (err) {
+                 console.error('Failed to upload to Drive:', err);
+                 driveUploadStatus = 'error';
+             }
+        } else if (!token) {
+            driveUploadStatus = 'not_signed_in';
+        }
+
+        // 4. Simpan status generate & URL (jika ada) ke LocalStorage
+        // URL ini yang akan dibuka tombol "Lihat Hasil"
+        storageService.addGeneratedDoc(user.nip, docName, finalFolderUrl);
         setGeneratedDocs(storageService.getGeneratedDocs(user.nip));
+
+        // Log to Firebase for Principal Dashboard
+        if (user.school) {
+            firebaseService.saveGeneratedDocLog({
+                teacherNip: user.nip,
+                teacherName: user.name,
+                school: user.school,
+                docType: docName,
+                fileName: result.filename || docName
+            });
+        }
+
+        // Update result message based on upload status
+        let finalMessage = 'Dokumen berhasil di-download!';
+        
+        if (driveUploadStatus === 'success') {
+          finalMessage += ' Salinan juga berhasil disimpan di Google Drive Anda.';
+        } else if (driveUploadStatus === 'not_signed_in') {
+          finalMessage += ' (Salinan TIDAK tersimpan ke Drive karena Anda belum Login di widget Sinkronisasi).';
+        } else if (driveUploadStatus === 'error') {
+          finalMessage += ' (Gagal upload ke Drive, cek koneksi).';
+        }
+
+        setGenerationResult({
+          status: 'success',
+          message: finalMessage,
+          folderUrl: finalFolderUrl,
+          files: result.files
+        });
+      } else {
+          setGenerationResult(result);
       }
 
     } catch (error) {
@@ -139,14 +578,45 @@ const GuruHome = () => {
   };
 
   const handleAddSchedule = () => {
-    setNewSchedule({ day: 'Senin', time: '08:00 - 09:30', subject: 'Matematika' });
+    setEditingScheduleIndex(null);
+    setNewSchedule({ day: 'Senin', time: '08:00 - 09:30', subject: '' });
     setIsScheduleModalOpen(true);
   };
 
-  const confirmAddSchedule = () => {
+  const handleEditSchedule = (index: number) => {
+    setEditingScheduleIndex(index);
+    setNewSchedule(schedule[index]);
+    setIsScheduleModalOpen(true);
+  };
+
+  const handleDeleteSchedule = (index: number) => {
+    if (window.confirm('Hapus jadwal ini?')) {
+      const updated = [...schedule];
+      updated.splice(index, 1);
+      setSchedule(updated);
+      if (user?.nip) {
+        storageService.saveSchedule(user.nip, updated);
+      }
+    }
+  };
+
+  const confirmSaveSchedule = () => {
     if (newSchedule.day && newSchedule.time && newSchedule.subject) {
-      setSchedule([...schedule, newSchedule]);
+      let updated;
+      if (editingScheduleIndex !== null) {
+        // Edit existing
+        updated = [...schedule];
+        updated[editingScheduleIndex] = newSchedule;
+      } else {
+        // Add new
+        updated = [...schedule, newSchedule];
+      }
+      setSchedule(updated);
+      if (user?.nip) {
+        storageService.saveSchedule(user.nip, updated);
+      }
       setIsScheduleModalOpen(false);
+      setEditingScheduleIndex(null);
     }
   };
 
@@ -210,10 +680,27 @@ const GuruHome = () => {
       {/* Modal Result / Loading */}
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="flex flex-col items-center rounded-lg bg-white p-8 shadow-xl">
+          <div className="flex flex-col items-center rounded-lg bg-white p-8 shadow-xl max-w-md text-center w-full">
             <Loader2 className="mb-4 h-12 w-12 animate-spin text-blue-600" />
-            <p className="text-lg font-semibold text-gray-700">Sedang membuat dokumen...</p>
-            <p className="text-sm text-gray-500">Mohon tunggu sebentar, proses ini mungkin memakan waktu.</p>
+            <p className="text-lg font-semibold text-gray-700">
+                {batchProgress ? batchProgress.status : 'Sedang membuat dokumen...'}
+            </p>
+            
+            {batchProgress ? (
+                <div className="w-full mt-4">
+                     <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                        <div 
+                            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                            style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+                        ></div>
+                     </div>
+                     <p className="text-xs text-gray-500">
+                        {batchProgress.current} dari {batchProgress.total} file
+                     </p>
+                </div>
+            ) : (
+                <p className="text-sm text-gray-500">Mohon tunggu sebentar, proses ini mungkin memakan waktu.</p>
+            )}
           </div>
         </div>
       )}
@@ -290,7 +777,7 @@ const GuruHome = () => {
                 type="text"
                 value={newClassName}
                 onChange={(e) => setNewClassName(e.target.value)}
-                placeholder="Contoh: 7A"
+                placeholder="Contoh: 1A, 2B"
                 className="mb-4 w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
@@ -315,18 +802,54 @@ const GuruHome = () => {
         </div>
       )}
 
-      {/* Modal Add Schedule */}
-      {isScheduleModalOpen && (
+      {/* Class Selection Modal for Modul Ajar */}
+      {showClassSelector && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl animate-in fade-in zoom-in duration-200">
-            <h3 className="mb-4 text-lg font-bold text-gray-800">Tambah Jadwal</h3>
+            <h3 className="mb-4 text-lg font-bold text-gray-800">Pilih Kelas</h3>
+            <p className="mb-4 text-sm text-gray-600">Pilih kelas untuk generate {pendingDocType}</p>
+            <div className="grid grid-cols-2 gap-3">
+              {['1', '2', '3', '4', '5', '6'].map(cls => (
+                <button
+                  key={cls}
+                  onClick={() => {
+                    handleGenerateDoc(pendingDocType, cls);
+                    setShowClassSelector(false);
+                    setPendingDocType('');
+                  }}
+                  className="rounded-lg bg-blue-50 px-4 py-3 font-bold text-blue-600 hover:bg-blue-100 transition-colors"
+                >
+                  Kelas {cls}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                  setShowClassSelector(false);
+                  setPendingDocType('');
+              }}
+              className="mt-6 w-full rounded-lg bg-gray-100 py-2.5 font-semibold text-gray-600 hover:bg-gray-200"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Add/Edit Schedule */}
+      {isScheduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl animate-in fade-in zoom-in duration-200">
+            <h3 className="mb-6 text-lg font-bold text-gray-800">
+              {editingScheduleIndex !== null ? 'Edit Jadwal Mengajar' : 'Tambah Jadwal Baru'}
+            </h3>
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Hari</label>
+                <label className="mb-1 block text-xs font-bold uppercase text-gray-500">Hari</label>
                 <select
                   value={newSchedule.day}
                   onChange={(e) => setNewSchedule({ ...newSchedule, day: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 p-2.5"
+                  className="w-full rounded-xl border-gray-200 bg-gray-50 p-3 text-sm focus:border-blue-500 focus:bg-white focus:ring-blue-500"
                 >
                   {['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'].map(d => (
                     <option key={d} value={d}>{d}</option>
@@ -334,36 +857,36 @@ const GuruHome = () => {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Waktu</label>
+                <label className="mb-1 block text-xs font-bold uppercase text-gray-500">Waktu</label>
                 <input
                   type="text"
                   value={newSchedule.time}
                   onChange={(e) => setNewSchedule({ ...newSchedule, time: e.target.value })}
                   placeholder="08:00 - 09:30"
-                  className="w-full rounded-lg border border-gray-300 p-2.5"
+                  className="w-full rounded-xl border-gray-200 bg-gray-50 p-3 text-sm focus:border-blue-500 focus:bg-white focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Mata Pelajaran</label>
+                <label className="mb-1 block text-xs font-bold uppercase text-gray-500">Mata Pelajaran</label>
                 <input
                   type="text"
                   value={newSchedule.subject}
                   onChange={(e) => setNewSchedule({ ...newSchedule, subject: e.target.value })}
                   placeholder="Matematika"
-                  className="w-full rounded-lg border border-gray-300 p-2.5"
+                  className="w-full rounded-xl border-gray-200 bg-gray-50 p-3 text-sm focus:border-blue-500 focus:bg-white focus:ring-blue-500"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-3 pt-4">
                 <button
                   onClick={() => setIsScheduleModalOpen(false)}
-                  className="rounded px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                  className="rounded-xl bg-gray-100 px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-gray-200"
                 >
                   Batal
                 </button>
                 <button
-                  onClick={confirmAddSchedule}
+                  onClick={confirmSaveSchedule}
                   disabled={!newSchedule.subject || !newSchedule.time}
-                  className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-blue-300"
+                  className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 hover:shadow-lg disabled:bg-blue-300 disabled:shadow-none"
                 >
                   Simpan
                 </button>
@@ -373,75 +896,128 @@ const GuruHome = () => {
         </div>
       )}
 
-      <main className="container mx-auto mt-6 px-4">
-        {/* User Info & Camera */}
-        <div className="mb-6 grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div className="col-span-1 flex flex-col gap-6">
-            <div className="rounded-lg bg-white p-6 shadow-md">
-              <div className="text-center">
-                <CameraCapture onCapture={handleProfileUpdate} initialImage={user.photo} />
-                <h2 className="mt-4 text-lg font-bold">{user.name}</h2>
-                <p className="text-gray-600">{user.subRole || user.role}</p>
-                <p className="text-sm text-gray-500">NIP: {user.nip}</p>
-                <p className="text-sm text-gray-500">{user.school}</p>
+      <main className="container mx-auto mt-6 px-4 pb-20">
+        {/* Modern Hero Section with Glassmorphism */}
+        <div className="relative mb-8 overflow-hidden rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-700 p-8 shadow-xl text-white">
+          <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 rounded-full bg-white opacity-10 blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 -mb-10 -ml-10 h-64 w-64 rounded-full bg-blue-400 opacity-20 blur-3xl"></div>
+          
+          <div className="relative z-10 flex flex-col items-center gap-6 md:flex-row md:gap-8">
+            <div className="relative">
+              <div className="h-24 w-24 overflow-hidden rounded-full border-4 border-white/30 shadow-lg">
+                 {user.photo ? (
+                    <img src={user.photo} alt={user.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-white/20 text-3xl font-bold text-white">
+                      {user.name.charAt(0)}
+                    </div>
+                  )}
               </div>
+              <div className="absolute bottom-1 right-1 h-5 w-5 rounded-full border-2 border-indigo-700 bg-green-400"></div>
             </div>
             
-            <GoogleSyncWidget />
+            <div className="flex-1 text-center md:text-left">
+              <h1 className="text-3xl font-bold tracking-tight">Halo, {user.name} 👋</h1>
+              <p className="mt-1 text-blue-100 opacity-90">{user.subRole || user.role} • {user.school}</p>
+              <div className="mt-4 flex flex-wrap justify-center gap-3 md:justify-start">
+                 <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-xs font-medium backdrop-blur-sm">
+                   <BookOpen size={14} /> {currentTeaching}
+                 </span>
+                 <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-xs font-medium backdrop-blur-sm">
+                   <Users size={14} /> {students.length} Siswa
+                 </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+               <CameraCapture onCapture={handleProfileUpdate} initialImage={user.photo} />
+               <GoogleSyncWidget />
+            </div>
+          </div>
+        </div>
+
+        {/* Dashboard Stats Grid */}
+        <div className="mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Card 1: Progres Administrasi (Moved here for better visibility) */}
+          <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100">
+             <div className="flex items-center justify-between mb-4">
+               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100 text-purple-600">
+                 <FileText size={24} />
+               </div>
+               <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">Kelengkapan</span>
+             </div>
+             <h3 className="text-2xl font-bold text-gray-800 mb-1">
+               {Math.round((generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length / ADMIN_DOCS.length) * 100)}%
+             </h3>
+             <p className="text-sm text-gray-500 mb-4">Dokumen Administrasi Selesai</p>
+             
+             {/* Custom Progress Bar */}
+             <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                <div 
+                  className="bg-gradient-to-r from-purple-500 to-indigo-500 h-3 rounded-full transition-all duration-1000 ease-out"
+                  style={{ width: `${Math.round((generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length / ADMIN_DOCS.length) * 100)}%` }}
+                ></div>
+             </div>
+             <div className="mt-2 text-xs text-gray-400 text-right">
+               {generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length} / {ADMIN_DOCS.length} Dokumen
+             </div>
           </div>
 
-          <div className="col-span-1 md:col-span-2">
-            {/* Info Hari & Mengajar */}
-            <div className="mb-6 rounded-lg bg-blue-50 p-6 shadow-sm">
-              <h3 className="mb-2 text-lg font-bold text-blue-900">Jadwal Mengajar Hari Ini</h3>
-              <p className="text-3xl font-bold text-blue-600">{currentTeaching}</p>
-              <p className="mt-2 text-gray-600">
-                {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
-            </div>
+          {/* Card 2: Jadwal Mengajar */}
+          <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100">
+             <div className="flex items-center justify-between mb-4">
+               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+                 <BookOpen size={24} />
+               </div>
+               <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">Hari Ini</span>
+             </div>
+             <h3 className="text-xl font-bold text-gray-800 mb-1 line-clamp-2">{currentTeaching}</h3>
+             <a 
+               href="#jadwal-section" 
+               className="mt-2 inline-flex items-center text-xs font-semibold text-orange-600 hover:text-orange-700"
+               onClick={(e) => {
+                 e.preventDefault();
+                 document.getElementById('jadwal-section')?.scrollIntoView({ behavior: 'smooth' });
+               }}
+             >
+               Lihat Detail <ArrowLeft size={12} className="ml-1 rotate-180" />
+             </a>
+          </div>
 
-            {/* Modules & Presensi Shortcuts */}
-            <div className="grid grid-cols-3 gap-4">
-              <div 
-                onClick={() => {
-                  const docType = 'RPPM/Modul Ajar PM';
-                  const existingDoc = generatedDocs.find(d => d.type === docType);
-                  if (existingDoc && existingDoc.url) {
-                    window.open(existingDoc.url, '_blank', 'noopener,noreferrer');
-                  } else {
-                    // Trigger generate if not exists
-                    handleGenerateDoc(docType);
-                  }
-                }}
-                className="cursor-pointer rounded-lg bg-white p-4 shadow-sm transition hover:shadow-md"
-              >
-                <div className="mb-2 flex items-center gap-2 text-purple-600">
-                  <BookOpen />
-                  <span className="font-bold">Modul Ajar</span>
-                </div>
-                <p className="text-sm text-gray-500">Akses template modul ajar sesuai kurikulum merdeka.</p>
-              </div>
-              <div 
-                onClick={() => navigate('/guru/presensi')}
-                className="cursor-pointer rounded-lg bg-white p-4 shadow-sm transition hover:shadow-md"
-              >
-                <div className="mb-2 flex items-center gap-2 text-orange-600">
-                  <Users />
-                  <span className="font-bold">Presensi Kelas</span>
-                </div>
-                <p className="text-sm text-gray-500">Catat kehadiran siswa secara digital.</p>
-              </div>
-              <div 
-                onClick={() => navigate('/guru/penilaian')}
-                className="cursor-pointer rounded-lg bg-white p-4 shadow-sm transition hover:shadow-md"
-              >
-                <div className="mb-2 flex items-center gap-2 text-green-600">
-                  <FileText />
-                  <span className="font-bold">Penilaian</span>
-                </div>
-                <p className="text-sm text-gray-500">Input nilai formatif dan sumatif siswa.</p>
-              </div>
-            </div>
+          {/* Card 3: Presensi Siswa */}
+          <div 
+            onClick={() => navigate('/guru/presensi')}
+            className="group relative cursor-pointer overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100"
+          >
+             <div className="flex items-center justify-between mb-4">
+               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                 <ClipboardCheck size={24} />
+               </div>
+               <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">Harian</span>
+             </div>
+             <h3 className="text-xl font-bold text-gray-800 mb-1">Presensi</h3>
+             <p className="text-sm text-gray-500">Catat kehadiran siswa</p>
+             <div className="mt-4 text-xs font-semibold text-blue-600 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+               Buka Presensi <ArrowLeft size={12} className="rotate-180" />
+             </div>
+          </div>
+
+          {/* Card 4: Penilaian Cepat */}
+          <div 
+            onClick={() => navigate('/guru/penilaian')}
+            className="group relative cursor-pointer overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100"
+          >
+             <div className="flex items-center justify-between mb-4">
+               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-100 text-green-600">
+                 <Edit size={24} />
+               </div>
+               <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">Aksi Cepat</span>
+             </div>
+             <h3 className="text-xl font-bold text-gray-800 mb-1">Input Nilai</h3>
+             <p className="text-sm text-gray-500">Formatif & Sumatif</p>
+             <div className="mt-4 text-xs font-semibold text-green-600 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+               Buka Halaman Penilaian <ArrowLeft size={12} className="rotate-180" />
+             </div>
           </div>
         </div>
 
@@ -455,24 +1031,47 @@ const GuruHome = () => {
               Administrasi Pembelajaran
             </h3>
             
-            {/* Back Button if not in menu */}
-            {adminViewMode !== 'menu' && (
-              <button
-                onClick={() => setAdminViewMode('menu')}
-                className="group flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-gray-200 transition-all hover:bg-gray-50 hover:ring-gray-300 hover:shadow-md"
-              >
-                <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
-                Kembali ke Menu
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {/* Back Button if not in menu */}
+              {adminViewMode !== 'menu' && (
+                <button
+                  onClick={() => setAdminViewMode('menu')}
+                  className="group flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-gray-200 transition-all hover:bg-gray-50 hover:ring-gray-300 hover:shadow-md"
+                >
+                  <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
+                  Kembali ke Menu
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Menu Mode */}
           {adminViewMode === 'menu' && (
+            <div className="mb-6">
+               <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                  <span>Progres Kelengkapan Dokumen</span>
+                  <span className="font-bold">{generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length}/{ADMIN_DOCS.length} ({Math.round((generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length / ADMIN_DOCS.length) * 100)}%)</span>
+               </div>
+               <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden shadow-inner">
+                  <div 
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 h-4 rounded-full transition-all duration-1000 ease-out flex items-center justify-center text-[10px] text-white font-bold"
+                    style={{ width: `${Math.round((generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length / ADMIN_DOCS.length) * 100)}%` }}
+                  >
+                    {Math.round((generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length / ADMIN_DOCS.length) * 100) > 10 && 
+                     `${Math.round((generatedDocs.filter(d => ADMIN_DOCS.includes(d.type)).length / ADMIN_DOCS.length) * 100)}%`}
+                  </div>
+               </div>
+               <p className="text-xs text-gray-500 mt-2">
+                 Lengkapi {ADMIN_DOCS.length} instrumen administrasi untuk memenuhi standar supervisi.
+               </p>
+            </div>
+          )}
+
+          {adminViewMode === 'menu' && (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <button
                 onClick={() => setAdminViewMode('generate')}
-                className="group relative overflow-hidden rounded-2xl bg-white p-8 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100"
+                className="group relative overflow-hidden rounded-2xl bg-white p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100 md:p-8"
               >
                 <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-20%] rounded-full bg-blue-50 opacity-50 transition-transform group-hover:scale-150"></div>
                 <div className="relative z-10">
@@ -489,7 +1088,7 @@ const GuruHome = () => {
 
               <button
                 onClick={() => setAdminViewMode('results')}
-                className="group relative overflow-hidden rounded-2xl bg-white p-8 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100"
+                className="group relative overflow-hidden rounded-2xl bg-white p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100 md:p-8"
               >
                 <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-20%] rounded-full bg-green-50 opacity-50 transition-transform group-hover:scale-150"></div>
                 <div className="relative z-10">
@@ -521,7 +1120,12 @@ const GuruHome = () => {
                 
                 const handleClick = () => {
                   if (isGenerateMode) {
-                    handleGenerateDoc(doc);
+                    if (doc === 'RPPM/Modul Ajar PM') {
+                        setPendingDocType(doc);
+                        setShowClassSelector(true);
+                    } else {
+                        handleGenerateDoc(doc);
+                    }
                   } else if (isResultMode && isDone && existingDoc?.url) {
                     window.open(existingDoc.url, '_blank', 'noopener,noreferrer');
                   } else if (isResultMode && isDone && !existingDoc?.url) {
@@ -591,68 +1195,100 @@ const GuruHome = () => {
         </div>
 
         {/* Jadwal Mengajar */}
-        <div className="mb-8">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="flex items-center gap-2 text-xl font-bold text-gray-800">
-              <Settings className="text-blue-600" />
+        <div id="jadwal-section" className="mb-10 scroll-mt-24">
+          <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <h3 className="flex items-center gap-3 text-2xl font-bold text-gray-800">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
+                <BookOpen size={24} />
+              </div>
               Jadwal Mengajar
             </h3>
             <button 
               onClick={handleAddSchedule}
-              className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+              className="group flex w-full items-center justify-center gap-2 rounded-full bg-orange-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-orange-700 hover:shadow-md sm:w-auto"
             >
-              <Plus size={14} /> Tambah
+              <Plus size={16} className="transition-transform group-hover:rotate-90" /> Atur Jadwal
             </button>
           </div>
-          <div className="overflow-hidden rounded-lg bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-2xl bg-white shadow-md ring-1 ring-gray-100">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Hari</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Waktu</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Mata Pelajaran</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
                 {schedule.map((s, idx) => (
-                  <tr key={idx}>
+                  <tr key={idx} className="group hover:bg-gray-50">
                     <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{s.day}</td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{s.time}</td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{s.subject}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
+                      <div className="flex justify-end gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                        <button 
+                          onClick={() => handleEditSchedule(idx)}
+                          className="rounded-full bg-blue-50 p-1.5 text-blue-600 hover:bg-blue-100"
+                          title="Edit Jadwal"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteSchedule(idx)}
+                          className="rounded-full bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
+                          title="Hapus Jadwal"
+                        >
+                          <Trash size={16} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
+                {schedule.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                      Belum ada jadwal mengajar. Silakan tambah jadwal baru.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
         {/* Data Siswa */}
-        <div className="mb-8">
-          <div className="mb-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <h3 className="flex items-center gap-2 text-xl font-bold text-gray-800">
-              <Users className="text-blue-600" />
-              Data Siswa ({selectedClassForMapel ? `Kelas ${selectedClassForMapel}` : user.subRole})
+        <div className="mb-10">
+          <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <h3 className="flex items-center gap-3 text-2xl font-bold text-gray-800">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+                <Users size={24} />
+              </div>
+              Data Siswa <span className="text-lg font-normal text-gray-500">({selectedClassForMapel ? `Kelas ${selectedClassForMapel}` : user.subRole})</span>
             </h3>
             
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               {/* Tombol Kembali untuk Guru Mapel jika sudah memilih kelas */}
               {(user.subRole?.includes('PJOK') || user.subRole?.includes('PAIBP')) && selectedClassForMapel && (
                 <button 
                   onClick={() => setSelectedClassForMapel('')}
-                  className="flex items-center gap-1 rounded-md bg-gray-500 px-3 py-1 text-xs text-white hover:bg-gray-600"
+                  className="flex items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200"
                 >
-                  <ArrowLeft size={14} /> Kembali ke Daftar Kelas
+                  <ArrowLeft size={16} /> Kembali
                 </button>
               )}
               
               {/* Tombol Tambah Siswa hanya muncul jika sudah di view tabel siswa (sudah pilih kelas atau guru kelas) */}
               {((user.subRole?.includes('PJOK') || user.subRole?.includes('PAIBP')) ? selectedClassForMapel : true) && (
-                <button 
-                  onClick={() => setShowStudentForm(!showStudentForm)}
-                  className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
-                >
-                  <Plus size={14} /> {showStudentForm ? 'Tutup Form' : 'Tambah Siswa'}
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setShowStudentForm(!showStudentForm)}
+                    className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+                  >
+                    <Plus size={14} /> {showStudentForm ? 'Tutup Form' : 'Tambah Siswa'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -712,11 +1348,10 @@ const GuruHome = () => {
                     />
                     <input
                       type="text"
-                      placeholder="NIS"
+                      placeholder="NIS (Opsional)"
                       className="rounded border p-2"
                       value={studentForm.nis}
                       onChange={e => setStudentForm({...studentForm, nis: e.target.value})}
-                      required
                     />
                     <select
                       className="rounded border p-2"
@@ -735,7 +1370,7 @@ const GuruHome = () => {
                 </div>
               )}
 
-              <div className="overflow-hidden rounded-lg bg-white shadow-sm">
+              <div className="overflow-x-auto rounded-lg bg-white shadow-sm">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -747,8 +1382,10 @@ const GuruHome = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 bg-white">
-                    {students.length > 0 ? (
-                      students.map((student) => (
+                    {students.filter(s => !selectedClassForMapel || s.class === selectedClassForMapel).length > 0 ? (
+                      students
+                        .filter(s => !selectedClassForMapel || s.class === selectedClassForMapel)
+                        .map((student) => (
                         <tr key={student.id}>
                           <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{student.nis}</td>
                           <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">{student.name}</td>
@@ -779,11 +1416,18 @@ const GuruHome = () => {
         </div>
 
         {/* Laporan Kepala Sekolah */}
-        <div className="mb-8 rounded-lg bg-white p-6 shadow-sm">
-          <h3 className="mb-4 text-xl font-bold text-gray-800">Laporan & Supervisi</h3>
-          <p className="text-gray-600">
-            Rangkuman administrasi dan hasil supervisi akan muncul di sini setelah diverifikasi oleh Kepala Sekolah.
-          </p>
+        <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100 md:p-8">
+          <div className="flex items-center gap-3 mb-4">
+             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+               <FileText size={24} />
+             </div>
+             <h3 className="text-2xl font-bold text-gray-800">Laporan & Supervisi</h3>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-6 text-center border-2 border-dashed border-gray-200">
+            <p className="text-gray-500 font-medium">
+              Rangkuman administrasi dan hasil supervisi akan muncul di sini setelah diverifikasi oleh Kepala Sekolah.
+            </p>
+          </div>
         </div>
       </main>
     </>

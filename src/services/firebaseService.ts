@@ -6,6 +6,7 @@ const SETTINGS_COLLECTION = 'settings';
 const RUNNING_TEXT_DOC = 'running_text';
 const USERS_COLLECTION = 'users';
 const SUPERVISIONS_COLLECTION = 'supervisions';
+const GENERATED_DOCS_COLLECTION = 'generated_docs';
 
 export const firebaseService = {
   // Subscribe to Running Text changes (Realtime)
@@ -115,12 +116,17 @@ export const firebaseService = {
   // Subscribe to supervision reports by school (latest first)
   subscribeSupervisionsBySchool: (school: string, callback: (reports: SupervisionReport[]) => void) => {
     const colRef = collection(db, SUPERVISIONS_COLLECTION);
-    const q = query(colRef, where('school', '==', school), orderBy('date', 'desc'));
+    // REMOVED orderBy('date', 'desc') to avoid composite index requirement
+    // Sorting will be done client-side
+    const q = query(colRef, where('school', '==', school));
     return onSnapshot(q, (snapshot) => {
       const reports: SupervisionReport[] = [];
       snapshot.forEach((docSnap) => {
         reports.push(docSnap.data() as SupervisionReport);
       });
+      // Sort client-side
+      reports.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
       callback(reports);
     }, (error) => {
       console.error('Error subscribing supervisions:', error);
@@ -139,6 +145,37 @@ export const firebaseService = {
       callback(reports);
     }, (error) => {
       console.error('Error subscribing all supervisions:', error);
+    });
+  },
+
+  // Save generated doc log
+  saveGeneratedDocLog: async (log: { teacherNip: string; teacherName: string; school: string; docType: string; fileName: string }) => {
+    try {
+      // Use setDoc with a custom ID (teacherNip_docType) to avoid duplicates if generated multiple times
+      // This way we only count unique documents
+      const safeDocType = log.docType.replace(/[^a-zA-Z0-9]/g, '_');
+      const docId = `${log.teacherNip}_${safeDocType}`;
+      const docRef = doc(db, GENERATED_DOCS_COLLECTION, docId);
+      
+      await setDoc(docRef, {
+        ...log,
+        timestamp: new Date().toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error('Error saving gen doc log:', error);
+      return false;
+    }
+  },
+
+  // Subscribe to generated docs by school
+  subscribeGeneratedDocsBySchool: (school: string, callback: (logs: any[]) => void) => {
+    const colRef = collection(db, GENERATED_DOCS_COLLECTION);
+    const q = query(colRef, where('school', '==', school));
+    return onSnapshot(q, (snapshot) => {
+      const logs: any[] = [];
+      snapshot.forEach(doc => logs.push(doc.data()));
+      callback(logs);
     });
   }
 };

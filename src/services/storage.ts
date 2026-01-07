@@ -31,7 +31,14 @@ const STORAGE_KEYS = {
   CLASSES: 'app_classes',
   GENERATED_DOCS: 'app_generated_docs',
   SUPERVISIONS: 'app_supervisions',
+  SCHEDULES: 'app_schedules',
 };
+
+export interface ScheduleItem {
+  day: string;
+  time: string;
+  subject: string;
+}
 
 export interface SupervisionReport {
   id: string;
@@ -221,5 +228,16 @@ export const storageService = {
     } catch (e) {
       return [];
     }
+  },
+
+  getSchedule: (nip: string): ScheduleItem[] => {
+    const key = `${STORAGE_KEYS.SCHEDULES}_${nip}`;
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : [];
+  },
+
+  saveSchedule: (nip: string, schedule: ScheduleItem[]) => {
+    const key = `${STORAGE_KEYS.SCHEDULES}_${nip}`;
+    localStorage.setItem(key, JSON.stringify(schedule));
   }
 };

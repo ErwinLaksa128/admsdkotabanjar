@@ -5,8 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true, // Expose to network
     port: 5173,
-    strictPort: true, // Fail if port is busy instead of switching to 5174
+    strictPort: true, // Force to use port 5173 to match Google Console redirect URI
   },
   optimizeDeps: {
     include: ['xlsx-js-style']

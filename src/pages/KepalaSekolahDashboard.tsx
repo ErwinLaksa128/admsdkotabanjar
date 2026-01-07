@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, FileText, File as FileIcon, Save } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { User, SupervisionReport, storageService, isUserOnline } from '../services/storage';
-import { ADMINISTRATION_OBSERVATION_INSTRUMENT, PLANNING_OBSERVATION_INSTRUMENT, PELAKSANAAN_OBSERVATION_INSTRUMENT } from '../constants/documents';
+import { ADMINISTRATION_OBSERVATION_INSTRUMENT, PLANNING_OBSERVATION_INSTRUMENT, PELAKSANAAN_OBSERVATION_INSTRUMENT, ADMIN_DOCS } from '../constants/documents';
 import RunningText from '../components/RunningText';
 import { firebaseService } from '../services/firebaseService';
 
@@ -1484,8 +1484,8 @@ export const KSPlanningDeepForm = () => {
           </thead>
           <tbody>
             {PLANNING_OBSERVATION_INSTRUMENT.map((section, sIdx) => (
-                <>
-                    <tr key={sIdx} className="bg-gray-100 font-bold">
+                <React.Fragment key={sIdx}>
+                    <tr className="bg-gray-100 font-bold">
                         <td colSpan={6} className="border border-gray-800 p-2">{section.title}</td>
                     </tr>
                     {section.items.map((item) => {
@@ -1506,7 +1506,7 @@ export const KSPlanningDeepForm = () => {
                             </tr>
                         );
                     })}
-                </>
+                </React.Fragment>
             ))}
             
             {/* Summary Rows */}
@@ -1594,6 +1594,7 @@ const KSDashboardHome = () => {
   const navigate = useNavigate();
   const [teachers, setTeachers] = useState<User[]>([]);
   const [latestReports, setLatestReports] = useState<SupervisionReport[]>([]);
+  const [generatedStats, setGeneratedStats] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const currentUser = storageService.getCurrentUser();
@@ -1619,9 +1620,24 @@ const KSDashboardHome = () => {
         setLatestReports(reports.slice(0, 5));
       });
 
+      const unsubscribeDocs = firebaseService.subscribeGeneratedDocsBySchool(currentUser.school, (logs) => {
+        const stats: Record<string, Set<string>> = {};
+        logs.forEach(log => {
+            if (!stats[log.teacherNip]) stats[log.teacherNip] = new Set();
+            stats[log.teacherNip].add(log.docType);
+        });
+        
+        const counts: Record<string, number> = {};
+        Object.keys(stats).forEach(nip => {
+            counts[nip] = stats[nip].size;
+        });
+        setGeneratedStats(counts);
+      });
+
       return () => {
         unsubscribeUsers();
         unsubscribeSup();
+        unsubscribeDocs();
       };
     }
   }, []);
@@ -1663,15 +1679,31 @@ const KSDashboardHome = () => {
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <h3 className="mb-3 font-semibold">Guru di sekolah Anda</h3>
         <div className="grid gap-3">
-          {teachers.map(t => (
-            <div key={t.nip} className="flex items-center justify-between rounded-lg border border-gray-100 p-3">
-              <div>
-                <div className="font-medium">{t.name}</div>
-                <div className="text-xs text-gray-500">NIP: {t.nip}</div>
+          {teachers.map(t => {
+            const count = generatedStats[t.nip] || 0;
+            const total = ADMIN_DOCS.length;
+            const percentage = Math.min(Math.round((count / total) * 100), 100);
+
+            return (
+            <div key={t.nip} className="flex flex-col gap-2 rounded-lg border border-gray-100 p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{t.name}</div>
+                  <div className="text-xs text-gray-500">NIP: {t.nip}</div>
+                </div>
+                <span className={`text-xs rounded px-2 py-1 ${isUserOnline(t.lastSeen) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{isUserOnline(t.lastSeen) ? 'Online' : 'Offline'}</span>
               </div>
-              <span className={`text-xs rounded px-2 py-1 ${isUserOnline(t.lastSeen) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{isUserOnline(t.lastSeen) ? 'Online' : 'Offline'}</span>
+              
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
+              </div>
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Progress Administrasi</span>
+                <span>{count}/{total} ({percentage}%)</span>
+              </div>
             </div>
-          ))}
+          )})}
 
           {teachers.length === 0 && (
             <div className="text-sm text-gray-500">Tidak ada data guru.</div>
