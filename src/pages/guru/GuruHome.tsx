@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   FileText, Users, BookOpen, Plus, Edit, Trash, ArrowLeft,
-  X, ExternalLink, Download, Loader2, CheckCircle, ClipboardCheck
+  X, ExternalLink, Download, Loader2, CheckCircle, ClipboardCheck, QrCode
 } from 'lucide-react';
 import { storageService, User } from '../../services/storage';
 import { firebaseService } from '../../services/firebaseService';
@@ -12,6 +12,7 @@ import { googleDriveService } from '../../services/googleDrive';
 import CameraCapture from '../../components/CameraCapture';
 import GoogleSyncWidget from '../../components/GoogleSyncWidget';
 import { ADMIN_DOCS } from '../../constants/documents';
+import { generatePerangkatPembelajaran3HalamanPdf } from '../../services/templates';
 
 
 // Map of available Modul Ajar files per class
@@ -110,6 +111,7 @@ const GuruHome = () => {
   const [generationResult, setGenerationResult] = useState<GasResponse | null>(null);
   const [generatedDocs, setGeneratedDocs] = useState<{ type: string; url: string; date: string }[]>([]);
   const [adminViewMode, setAdminViewMode] = useState<'menu' | 'generate' | 'results'>('menu');
+  const [isExportingQrPdf, setIsExportingQrPdf] = useState(false);
 
   // Modal States
   const [isClassModalOpen, setIsClassModalOpen] = useState(false);
@@ -577,6 +579,20 @@ const GuruHome = () => {
     }
   };
 
+  const handleExportQrPdf = async () => {
+    if (!user?.nip || isExportingQrPdf) return;
+    setIsExportingQrPdf(true);
+    try {
+      await generatePerangkatPembelajaran3HalamanPdf({
+        user,
+        adminDocs: ADMIN_DOCS,
+        generatedDocs
+      });
+    } finally {
+      setIsExportingQrPdf(false);
+    }
+  };
+
   const handleAddSchedule = () => {
     setEditingScheduleIndex(null);
     setNewSchedule({ day: 'Senin', time: '08:00 - 09:30', subject: '' });
@@ -675,6 +691,28 @@ const GuruHome = () => {
 
   if (!user) return null;
 
+  const isClassTeacher = !!user.subRole?.includes('Kelas');
+  const teacherClassToken = isClassTeacher ? (user.subRole?.split('Kelas ')[1] || '') : '';
+  const resolveTeacherClass = (token: string) => {
+    const cleaned = (token || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!cleaned) return '';
+    if (classes.includes(cleaned)) return cleaned;
+    const digits = cleaned.replace(/[A-Z]/g, '');
+    if (!digits) return '';
+    const first = classes.find(c => c.toUpperCase().startsWith(digits));
+    return first || `${digits}A`;
+  };
+  const effectiveTeacherClass = isClassTeacher ? resolveTeacherClass(teacherClassToken) : '';
+  const classTeacherSubjects = [
+    'Matematika',
+    'Bahasa Indonesia',
+    'IPA',
+    'IPS',
+    'PPKn',
+    'Seni Budaya',
+    'PJOK'
+  ];
+
   return (
     <>
       {/* Modal Result / Loading */}
@@ -752,6 +790,15 @@ const GuruHome = () => {
                     </div>
                   </div>
                 )}
+
+                <button
+                  onClick={handleExportQrPdf}
+                  disabled={!user?.nip || isExportingQrPdf}
+                  className="flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-3 text-white transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-purple-300"
+                >
+                  {isExportingQrPdf ? <Loader2 size={20} className="animate-spin" /> : <ClipboardCheck size={20} />}
+                  Download PDF 3 Halaman (Cover + Pengesahan + Indeks QR)
+                </button>
               </div>
             )}
 
@@ -1004,7 +1051,17 @@ const GuruHome = () => {
 
           {/* Card 4: Penilaian Cepat */}
           <div 
-            onClick={() => navigate('/guru/penilaian')}
+            onClick={() => {
+              if (!isClassTeacher) {
+                navigate('/guru/penilaian');
+                return;
+              }
+
+              const params = new URLSearchParams();
+              const cls = effectiveTeacherClass || teacherClassToken;
+              if (cls) params.set('class', cls);
+              navigate(`/guru/penilaian?${params.toString()}`);
+            }}
             className="group relative cursor-pointer overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100"
           >
              <div className="flex items-center justify-between mb-4">
@@ -1020,6 +1077,41 @@ const GuruHome = () => {
              </div>
           </div>
         </div>
+
+        {isClassTeacher && (
+          <div className="mb-10">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-800">Penilaian per Mata Pelajaran</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {classTeacherSubjects.map((subj) => (
+                <button
+                  key={subj}
+                  type="button"
+                  onClick={() => {
+                    const params = new URLSearchParams();
+                    params.set('subject', subj);
+                    const cls = effectiveTeacherClass || teacherClassToken;
+                    if (cls) params.set('class', cls);
+                    navigate(`/guru/penilaian?${params.toString()}`);
+                  }}
+                  className="group flex items-center justify-between rounded-2xl bg-white p-5 text-left shadow-md ring-1 ring-gray-100 transition-all hover:-translate-y-1 hover:shadow-xl"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-600">
+                      <BookOpen size={22} />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-gray-900">{subj}</div>
+                      <div className="text-xs text-gray-500">Input nilai</div>
+                    </div>
+                  </div>
+                  <ArrowLeft size={16} className="rotate-180 text-gray-400 transition-transform group-hover:translate-x-1" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Administrasi Pembelajaran (Generate Docs) */}
         <div className="mb-8">
@@ -1068,7 +1160,7 @@ const GuruHome = () => {
           )}
 
           {adminViewMode === 'menu' && (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               <button
                 onClick={() => setAdminViewMode('generate')}
                 className="group relative overflow-hidden rounded-2xl bg-white p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100 md:p-8"
@@ -1099,6 +1191,24 @@ const GuruHome = () => {
                   <p className="text-gray-500">Akses dan unduh dokumen administrasi yang telah berhasil dibuat sebelumnya.</p>
                   <div className="mt-6 flex items-center text-sm font-semibold text-green-600">
                     Buka Folder <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={handleExportQrPdf}
+                disabled={!user?.nip || isExportingQrPdf}
+                className="group relative overflow-hidden rounded-2xl bg-white p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100 md:p-8 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-20%] rounded-full bg-purple-50 opacity-50 transition-transform group-hover:scale-150"></div>
+                <div className="relative z-10">
+                  <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-100 text-purple-600 shadow-sm transition-transform group-hover:scale-110 group-hover:rotate-3">
+                    {isExportingQrPdf ? <Loader2 size={32} className="animate-spin" /> : <QrCode size={32} />}
+                  </div>
+                  <h4 className="mb-2 text-2xl font-bold text-gray-900 group-hover:text-purple-700">Cetak QR</h4>
+                  <p className="text-gray-500">Download PDF 3 halaman berisi Cover, Pengesahan, dan Indeks QR Code.</p>
+                  <div className="mt-6 flex items-center text-sm font-semibold text-purple-600">
+                    Download PDF <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
                   </div>
                 </div>
               </button>

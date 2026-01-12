@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 // KONFIGURASI GOOGLE DRIVE
 // ANDA HARUS MENGGANTI INI DENGAN CLIENT ID DAN API KEY ANDA SENDIRI
 // DARI GOOGLE CLOUD CONSOLE (https://console.cloud.google.com)

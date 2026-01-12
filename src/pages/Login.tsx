@@ -10,11 +10,6 @@ const MAIN_ROLES = [
   { id: 'administrasi', label: 'Administrasi Perkantoran', icon: <Building2 size={24} /> },
 ];
 
-const GURU_SUB_ROLES = [
-  'Guru Kelas 1', 'Guru Kelas 2', 'Guru Kelas 3', 'Guru Kelas 4', 
-  'Guru Kelas 5', 'Guru Kelas 6', 'Guru PJOK', 'Guru PAIBP'
-];
-
 const Login = () => {
   const navigate = useNavigate();
   
@@ -30,6 +25,8 @@ const Login = () => {
   const [formData, setFormData] = useState({
     // Common
     subRole: '', // For Guru
+    guruRoleType: 'kelas',
+    guruClass: '1',
     schoolName: '',
     
     // Guru / User Info
@@ -68,10 +65,21 @@ const Login = () => {
     setStep('input-form');
     setError('');
     // Reset form data slightly but keep some defaults if needed
-    setFormData(prev => ({ 
-        ...prev, 
-        subRole: roleId === 'guru' ? GURU_SUB_ROLES[0] : '' 
-    }));
+    setFormData(prev => {
+      if (roleId !== 'guru') {
+        return {
+          ...prev,
+          subRole: ''
+        };
+      }
+
+      return {
+        ...prev,
+        subRole: 'Guru Kelas 1',
+        guruRoleType: 'kelas',
+        guruClass: '1'
+      };
+    });
     // Reset detection
     setIsReturningUser(false);
     setShowFullForm(true);
@@ -103,7 +111,19 @@ const Login = () => {
               if (role === 'guru') {
                   newData.userName = user.name;
                   if (user.school) newData.schoolName = user.school;
-                  if (user.subRole) newData.subRole = user.subRole;
+                  if (user.subRole) {
+                    newData.subRole = user.subRole;
+                    if (user.subRole.includes('PJOK')) {
+                      newData.guruRoleType = 'pjok';
+                      newData.guruClass = '';
+                    } else if (user.subRole.includes('PAIBP')) {
+                      newData.guruRoleType = 'paibp';
+                      newData.guruClass = '';
+                    } else if (user.subRole.includes('Kelas')) {
+                      newData.guruRoleType = 'kelas';
+                      newData.guruClass = user.subRole.split('Kelas ')[1] || '';
+                    }
+                  }
                   if (user.kepsekName) newData.kepsekName = user.kepsekName;
                   if (user.kepsekNip) newData.kepsekNip = user.kepsekNip;
                   if (user.pengawasName) newData.pengawasName = user.pengawasName;
@@ -145,6 +165,19 @@ const Login = () => {
     }
   };
 
+  const parseGuruClassToken = (raw: string) => {
+    const cleaned = (raw || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (!cleaned) return '';
+
+    const direct = cleaned.match(/^(\d{1,2})([A-Z])?$/);
+    if (direct) return `${direct[1]}${direct[2] || ''}`;
+
+    const prefixed = cleaned.match(/^KELAS(\d{1,2})([A-Z])?$/);
+    if (prefixed) return `${prefixed[1]}${prefixed[2] || ''}`;
+
+    return '';
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -181,6 +214,20 @@ const Login = () => {
       return;
     }
 
+    const computedGuruSubRole = (() => {
+      if (selectedMainRole !== 'guru') return '';
+      if (formData.guruRoleType === 'pjok') return 'Guru PJOK';
+      if (formData.guruRoleType === 'paibp') return 'Guru PAIBP';
+      const token = parseGuruClassToken(formData.guruClass || (formData.subRole.includes('Kelas') ? formData.subRole.split('Kelas ')[1] : ''));
+      if (!token) return '';
+      return `Guru Kelas ${token}`;
+    })();
+
+    if (selectedMainRole === 'guru' && !computedGuruSubRole) {
+      setError('Mohon isi kelas (contoh: 4 / 4A / 4B).');
+      return;
+    }
+
     // Construct Session User
     // We prioritize stored data if the form is hidden (returning user)
     // But if the user explicitly edited the form (showFullForm is true), we take the form data.
@@ -193,7 +240,7 @@ const Login = () => {
       
       school: formData.schoolName || user.school,
       
-      subRole: (selectedMainRole === 'guru' ? formData.subRole : 
+      subRole: (selectedMainRole === 'guru' ? computedGuruSubRole : 
                selectedMainRole === 'kepala-sekolah' ? 'Kepala Sekolah' :
                selectedMainRole === 'pengawas' ? 'Pengawas Sekolah' : 'Administrasi') || user.subRole,
                
@@ -327,16 +374,32 @@ const Login = () => {
                     {/* Sub Role */}
                     <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Pilih Peran Guru</label>
-                    <select
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <select
                         required
-                        value={formData.subRole}
-                        onChange={(e) => handleInputChange('subRole', e.target.value)}
+                        value={formData.guruRoleType}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          handleInputChange('guruRoleType', next);
+                          if (next !== 'kelas') handleInputChange('guruClass', '');
+                        }}
                         className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                    >
-                        {GURU_SUB_ROLES.map(role => (
-                        <option key={role} value={role}>{role}</option>
-                        ))}
-                    </select>
+                      >
+                        <option value="kelas">Guru Kelas</option>
+                        <option value="pjok">Guru PJOK</option>
+                        <option value="paibp">Guru PAIBP</option>
+                      </select>
+
+                      <input
+                        type="text"
+                        required={formData.guruRoleType === 'kelas'}
+                        disabled={formData.guruRoleType !== 'kelas'}
+                        value={formData.guruClass}
+                        onChange={(e) => handleInputChange('guruClass', e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100"
+                        placeholder="Kelas (contoh: 4 / 4A)"
+                      />
+                    </div>
                     </div>
 
                     {/* Nama Sekolah */}

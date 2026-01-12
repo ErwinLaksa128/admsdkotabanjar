@@ -65,17 +65,38 @@ const UserSync = () => {
 
     window.addEventListener('local-user-update', handleLocalUpdate);
 
-    // 4. Heartbeat (Update Last Seen every 1 minute)
-    const heartbeatInterval = setInterval(() => {
+    const heartbeat = () => {
       const currentUser = storageService.getCurrentUser();
       if (currentUser) {
         firebaseService.updateHeartbeat(currentUser.nip);
       }
+    };
+
+    heartbeat();
+
+    const handleFocus = () => {
+      heartbeat();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        heartbeat();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 4. Heartbeat (Update Last Seen every 1 minute)
+    const heartbeatInterval = setInterval(() => {
+      heartbeat();
     }, 60000); // 1 minute
 
     return () => {
       unsubscribe();
       window.removeEventListener('local-user-update', handleLocalUpdate);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(heartbeatInterval);
     };
   }, []);

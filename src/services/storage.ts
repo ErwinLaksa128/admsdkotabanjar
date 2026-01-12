@@ -62,10 +62,9 @@ export interface SupervisionReport {
 
 const DEFAULT_CLASSES: string[] = [];
 
-export const isUserOnline = (lastSeen?: string) => {
+export const isUserOnline = (lastSeen?: string, now: Date = new Date()) => {
   if (!lastSeen) return false;
   const lastSeenDate = new Date(lastSeen);
-  const now = new Date();
   const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / 60000;
   return diffMinutes < 2; // Online if seen in last 2 minutes (buffer for 1 min heartbeat)
 };
@@ -171,15 +170,16 @@ export const storageService = {
   
   // Helper untuk menyimpan user yang sedang login di session/local storage agar persisten
   setCurrentUser: (user: User) => {
-    localStorage.setItem('currentUser', JSON.stringify(user));
+    sessionStorage.setItem('currentUser', JSON.stringify(user));
   },
   
   getCurrentUser: (): User | null => {
-    const stored = localStorage.getItem('currentUser');
+    const stored = sessionStorage.getItem('currentUser') || localStorage.getItem('currentUser');
     return stored ? JSON.parse(stored) : null;
   },
 
   logout: () => {
+    sessionStorage.removeItem('currentUser');
     localStorage.removeItem('currentUser');
   },
 

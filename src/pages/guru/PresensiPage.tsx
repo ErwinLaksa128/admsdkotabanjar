@@ -54,8 +54,11 @@ const PresensiPage = () => {
       // Don't auto-select class, let them choose
     } else if (currentUser.subRole?.includes('Kelas')) {
       const classNum = currentUser.subRole.split('Kelas ')[1];
-      // Try to find a class like "1A" or just use "1" prefix logic
-      setSelectedClass(classNum + 'A'); // Naive default, could be improved
+      const available = storageService.getClasses();
+      const cleaned = (classNum || '').trim().toUpperCase().replace(/\s+/g, '');
+      const exact = available.includes(cleaned) ? cleaned : '';
+      const first = cleaned ? available.find(c => c.toUpperCase().startsWith(cleaned.replace(/[A-Z]/g, ''))) : '';
+      setSelectedClass(exact || first || (cleaned ? `${cleaned.replace(/[A-Z]/g, '')}A` : '1A'));
     } else {
       setSelectedClass('1A'); // Default fallback
     }

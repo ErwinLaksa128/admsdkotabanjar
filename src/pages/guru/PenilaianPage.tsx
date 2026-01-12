@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 import { storageService } from '../../services/storage';
@@ -10,6 +10,7 @@ import { getMateriByClass } from '../../data/materiPjok';
 
 const PenilaianPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [students, setStudents] = useState<Student[]>([]);
   
   // Filter States
@@ -50,23 +51,68 @@ const PenilaianPage = () => {
       return;
     }
 
+    const params = new URLSearchParams(location.search);
+    const subjectParam = params.get('subject');
+    const classParam = params.get('class');
+    const typeParam = params.get('type');
+    const semesterParam = params.get('semester');
+    const dateParam = params.get('date');
+    const materiParam = params.get('materi');
+    const pertemuanParam = params.get('pertemuan');
+    const viewParam = params.get('view');
+
+    if (subjectParam) setSubject(subjectParam);
+    if (semesterParam) setSemester(semesterParam);
+    if (dateParam) setDate(dateParam);
+    if (typeParam === 'Penilaian Harian' || typeParam === 'Penilaian STS' || typeParam === 'Penilaian SAS') {
+      setType(typeParam);
+    }
+    if (viewParam === 'rekap' || viewParam === 'input') setViewMode(viewParam);
+
     const isMapel = currentUser.subRole?.includes('PJOK') || currentUser.subRole?.includes('PAIBP');
     setIsMapelTeacher(!!isMapel);
 
+    const resolveClass = (token: string, available: string[]) => {
+      const cleaned = (token || '').trim().toUpperCase().replace(/\s+/g, '');
+      if (!cleaned) return '';
+      if (available.includes(cleaned)) return cleaned;
+      const m = cleaned.match(/^(\d{1,2})([A-Z])?$/);
+      if (!m) return '';
+      const digits = m[1];
+      const letter = m[2];
+      if (letter && available.includes(`${digits}${letter}`)) return `${digits}${letter}`;
+      const first = available.find(c => c.toUpperCase().startsWith(digits));
+      if (first) return first;
+      return `${digits}${letter || 'A'}`;
+    };
+
     if (isMapel) {
        // For Mapel teachers, load available classes
-       setAvailableClasses(storageService.getClasses());
-       
+       const available = storageService.getClasses();
+       setAvailableClasses(available);
+       if (classParam) setSelectedClass(resolveClass(classParam, available));
+
        // Set default subject based on role
        if (currentUser.subRole?.includes('PJOK')) setSubject('PJOK');
        if (currentUser.subRole?.includes('PAIBP')) setSubject('PAIBP'); // Assuming PAIBP is a subject option
+
+       if (materiParam) setMateri(materiParam);
+       if (pertemuanParam) {
+        const n = Number(pertemuanParam);
+        if (Number.isFinite(n) && n > 0) setPertemuan(n);
+       }
     } else if (currentUser.subRole?.includes('Kelas')) {
+      const available = storageService.getClasses();
       const classNum = currentUser.subRole.split('Kelas ')[1];
-      setSelectedClass(classNum + 'A');
+      const roleDefault = resolveClass(classNum, available);
+      const paramResolved = classParam ? resolveClass(classParam, available) : '';
+      setSelectedClass(paramResolved || roleDefault || (classNum ? `${classNum}A` : '1A'));
     } else {
-      setSelectedClass('1A');
+      const available = storageService.getClasses();
+      const paramResolved = classParam ? resolveClass(classParam, available) : '';
+      setSelectedClass(paramResolved || '1A');
     }
-  }, [navigate]);
+  }, [navigate, location.search]);
 
   useEffect(() => {
     if (selectedClass) {

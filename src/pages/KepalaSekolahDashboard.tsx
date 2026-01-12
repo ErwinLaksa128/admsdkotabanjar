@@ -738,7 +738,9 @@ export const KSReportForm = () => {
         if (last.notes && last.notes.conditions) {
             try {
                 setConditions(JSON.parse(last.notes.conditions));
-            } catch (e) {}
+            } catch (e) {
+                setConditions({});
+            }
         }
         if (last.notes && last.notes.grade) setGrade(last.notes.grade);
         setConclusion(last.conclusion || '');

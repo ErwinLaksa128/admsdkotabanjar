@@ -154,6 +154,7 @@ const AdminUsers = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [newUser, setNewUser] = useState<User>({ nip: '', name: '', role: 'guru', active: true });
   const [isAdding, setIsAdding] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   const fetchUsers = () => {
     setUsers(storageService.getUsers());
@@ -168,10 +169,12 @@ const AdminUsers = () => {
 
     window.addEventListener('external-users-update', handleExternalUpdate);
     const interval = setInterval(fetchUsers, 60000); // Update for online status
+    const onlineInterval = setInterval(() => setNow(new Date()), 10000);
 
     return () => {
       window.removeEventListener('external-users-update', handleExternalUpdate);
       clearInterval(interval);
+      clearInterval(onlineInterval);
     };
   }, []);
 
@@ -285,7 +288,7 @@ const AdminUsers = () => {
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
             {users.map((user) => {
-              const online = isUserOnline(user.lastSeen);
+              const online = isUserOnline(user.lastSeen, now);
               return (
                 <tr key={user.nip}>
                   <td className="px-6 py-4">{user.nip}</td>

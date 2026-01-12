@@ -21,7 +21,7 @@ const GuruDashboard = () => {
   }, [navigate]);
 
   const handleLogout = () => {
-    localStorage.removeItem('currentUser');
+    storageService.logout();
     navigate('/');
   };
 
