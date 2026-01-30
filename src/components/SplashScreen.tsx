@@ -39,21 +39,39 @@ const SplashScreen = ({ onFinish }: SplashScreenProps) => {
         />
       </div>
 
-      <h1 className="mb-2 text-3xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white animate-pulse text-center px-4">
-        SISTEM ADMINISTRASI GURU
-      </h1>
+      <div className="text-center space-y-1 mb-8 px-4 flex flex-col items-center">
+        <h1 className="text-3xl md:text-4xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white animate-pulse mb-2">
+          ADMINISTRASI GURU
+        </h1>
+        <h2 className="text-lg md:text-xl font-semibold text-blue-100 tracking-wide">
+          TINGKAT SEKOLAH DASAR
+        </h2>
+        <h2 className="text-lg md:text-xl font-semibold text-blue-100 tracking-wide">
+          KOTA BANJAR
+        </h2>
+      </div>
       
-      <p className="text-blue-300 text-sm tracking-widest uppercase mb-12 text-center px-4">
-        Digitalisasi • Otomasi • Terintegrasi
-      </p>
+      <div className="text-center space-y-1 mb-12 px-4 flex flex-col items-center">
+        <p className="text-blue-400 text-xs tracking-[0.2em] uppercase">
+          TRANSFORMASI DIGITAL MENUJU
+        </p>
+        <p className="text-yellow-400/90 text-sm font-bold tracking-widest uppercase glow-sm">
+          BANJAR BERDAYA, BANJAR MASAGI
+        </p>
+      </div>
 
       {/* Loading Bar */}
       <div className="h-1.5 w-48 overflow-hidden rounded-full bg-blue-900/50 backdrop-blur-sm">
         <div className="h-full w-full origin-left animate-[grow_2s_ease-in-out_infinite] bg-blue-400"></div>
       </div>
       
-      <div className="absolute bottom-8 text-xs text-blue-400/60">
-        v1.0.0 &copy; 2024
+      <div className="absolute bottom-8 text-center space-y-1">
+        <p className="text-xs text-blue-300/80 font-medium tracking-wide">
+          DINAS PENDIDIKAN KOTA BANJAR
+        </p>
+        <p className="text-[10px] text-blue-400/50">
+          &copy; 2026
+        </p>
       </div>
     </div>
   );

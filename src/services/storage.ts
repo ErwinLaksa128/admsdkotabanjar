@@ -14,6 +14,7 @@ export interface User {
   pengawasName?: string;
   pengawasNip?: string;
   wilayahBinaan?: string;
+  managedSchools?: string[]; // List of schools assigned to this user (for Pengawas)
   lastSeen?: string; // ISO date string for online status
 }
 
@@ -32,7 +33,21 @@ const STORAGE_KEYS = {
   GENERATED_DOCS: 'app_generated_docs',
   SUPERVISIONS: 'app_supervisions',
   SCHEDULES: 'app_schedules',
+  SCHOOL_VISITS: 'app_school_visits',
 };
+
+export interface SchoolVisit {
+  id: string;
+  schoolName: string;
+  visitorNip: string; // Pengawas NIP
+  visitorName: string;
+  date: string;
+  purpose: string;
+  findings: string;
+  recommendations: string;
+  status: 'planned' | 'completed';
+  createdAt: string;
+}
 
 export interface ScheduleItem {
   day: string;
@@ -90,6 +105,27 @@ export const storageService = {
 
   getSupervisions: (teacherNip: string): SupervisionReport[] => {
     const key = `${STORAGE_KEYS.SUPERVISIONS}_${teacherNip}`;
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : [];
+  },
+
+  saveSchoolVisit: (visit: SchoolVisit) => {
+    const key = `${STORAGE_KEYS.SCHOOL_VISITS}_${visit.schoolName}`;
+    const stored = localStorage.getItem(key);
+    let visits: SchoolVisit[] = stored ? JSON.parse(stored) : [];
+    
+    const existingIndex = visits.findIndex(v => v.id === visit.id);
+    if (existingIndex >= 0) {
+      visits[existingIndex] = visit;
+    } else {
+      visits.push(visit);
+    }
+    
+    localStorage.setItem(key, JSON.stringify(visits));
+  },
+
+  getSchoolVisits: (schoolName: string): SchoolVisit[] => {
+    const key = `${STORAGE_KEYS.SCHOOL_VISITS}_${schoolName}`;
     const stored = localStorage.getItem(key);
     return stored ? JSON.parse(stored) : [];
   },

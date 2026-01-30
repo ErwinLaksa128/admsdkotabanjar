@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { GenerateDocParams } from './api';
 import type { User } from './storage';
 import QRCode from 'qrcode';
+import { APP_CONFIG } from '../config/app';
 
 // Helper: Load Image
 const loadImage = (url: string): Promise<HTMLImageElement> => {
@@ -23,11 +24,6 @@ const getAcademicYear = (now: Date = new Date()) => {
   const year = now.getFullYear();
   const month = now.getMonth();
   return month > 6 ? `${year}/${year + 1}` : `${year - 1}/${year}`;
-};
-
-const getSemesterNumber = (now: Date = new Date()) => {
-  const month = now.getMonth();
-  return month > 6 ? '1' : '2';
 };
 
 // --- DRAWING HELPERS ---
@@ -57,7 +53,7 @@ export const generatePerangkatPembelajaran3HalamanPdf = async (params: {
   const tahunPelajaran = getAcademicYear(now);
   // const semester = getSemesterNumber(now); // Unused
 
-  const sekolah = params.user.school || 'UPTD SDN ...';
+  const sekolah = params.user.school || APP_CONFIG.defaultSchool;
   const namaGuru = params.user.name || 'Nama Guru';
   const nipGuru = params.user.nip || '-';
   const namaKepsek = params.user.kepsekName || '................';
@@ -93,11 +89,11 @@ export const generatePerangkatPembelajaran3HalamanPdf = async (params: {
   const schoolNameWidth = doc.getTextWidth(sekolah) + 40;
   // Ensure max width isn't too wide
   const finalSchoolWidth = Math.min(schoolNameWidth, 180);
-  drawRoundedRect(doc, (pageWidth - finalSchoolWidth) / 2, 40, finalSchoolWidth, 16, 8, [30, 144, 255]); // Dodger Blue
+  drawRoundedRect(doc, (pageWidth - finalSchoolWidth) / 2, 40, finalSchoolWidth, 16, 8, APP_CONFIG.colors.primary); // Theme Primary
   drawCenteredText(doc, sekolah.toUpperCase(), 51, 16, [255, 255, 255]);
 
   // 2. "Administrasi" (Yellow Box)
-  drawRoundedRect(doc, pageWidth / 2 - 70, 70, 140, 24, 4, [255, 200, 0]); // Gold
+  drawRoundedRect(doc, pageWidth / 2 - 70, 70, 140, 24, 4, APP_CONFIG.colors.secondary); // Theme Secondary
   drawCenteredText(doc, 'Administrasi', 87, 26, [0, 0, 0], 'times', 'bold');
 
   // 3. "PJOK" (Blue Rotated Box)
@@ -151,7 +147,7 @@ export const generatePerangkatPembelajaran3HalamanPdf = async (params: {
 
   // 6. Name Tag (Cyan)
   const nameY = 255;
-  drawRoundedRect(doc, 20, nameY, pageWidth - 40, 25, 8, [0, 220, 255]); // Cyan
+  drawRoundedRect(doc, 20, nameY, pageWidth - 40, 25, 8, APP_CONFIG.colors.accent); // Theme Accent
   doc.setFontSize(14);
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'bold');
@@ -178,7 +174,7 @@ export const generatePerangkatPembelajaran3HalamanPdf = async (params: {
   if (logoImg) doc.addImage(logoImg, 'PNG', 20, 10, 15, 15);
   
   // Title Header (Blue Pill)
-  drawRoundedRect(doc, pageWidth / 2 - 80, 30, 160, 15, 5, [30, 144, 255]);
+  drawRoundedRect(doc, pageWidth / 2 - 80, 30, 160, 15, 5, APP_CONFIG.colors.primary);
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(14);
   doc.text('LEMBAR PENGESAHAN', pageWidth / 2, 40, { align: 'center' });
@@ -234,7 +230,7 @@ export const generatePerangkatPembelajaran3HalamanPdf = async (params: {
   // Header School
   if (logoImg) doc.addImage(logoImg, 'PNG', 10, 10, 15, 15);
   
-  drawRoundedRect(doc, pageWidth / 2 - 80, 20, 160, 14, 7, [30, 144, 255]);
+  drawRoundedRect(doc, pageWidth / 2 - 80, 20, 160, 14, 7, APP_CONFIG.colors.primary);
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
@@ -242,7 +238,7 @@ export const generatePerangkatPembelajaran3HalamanPdf = async (params: {
 
   // Adm PJOK Title (Side)
   // Yellow Box "Adm"
-  drawRoundedRect(doc, pageWidth - 80, 50, 60, 25, 4, [255, 200, 0]);
+  drawRoundedRect(doc, pageWidth - 80, 50, 60, 25, 4, APP_CONFIG.colors.secondary);
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(24);
   doc.setFont('times', 'bold');
@@ -283,7 +279,7 @@ export const generatePerangkatPembelajaran3HalamanPdf = async (params: {
 
   // Name Tag Bottom Right
   const nameTagY = pageHeight - 30;
-  drawRoundedRect(doc, pageWidth - 90, nameTagY, 80, 16, 4, [0, 220, 255]);
+  drawRoundedRect(doc, pageWidth - 90, nameTagY, 80, 16, 4, APP_CONFIG.colors.accent);
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(9);
   doc.text(namaGuru, pageWidth - 50, nameTagY + 6, { align: 'center' });
@@ -363,8 +359,8 @@ const addStandardHeader = (doc: jsPDF, sekolah: string) => {
   const pageWidth = doc.internal.pageSize.width;
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text('PEMERINTAH KABUPATEN BANJAR', pageWidth / 2, 20, { align: 'center' });
-  doc.text('DINAS PENDIDIKAN', pageWidth / 2, 26, { align: 'center' });
+  doc.text(APP_CONFIG.pemda, pageWidth / 2, 20, { align: 'center' });
+  doc.text(APP_CONFIG.dinas, pageWidth / 2, 26, { align: 'center' });
   doc.setFontSize(12);
   doc.setFont('helvetica', 'normal');
   doc.text(`SEKOLAH: ${sekolah || '...................'}`, pageWidth / 2, 34, { align: 'center' });

@@ -1622,24 +1622,27 @@ const KSDashboardHome = () => {
         setLatestReports(reports.slice(0, 5));
       });
 
-      const unsubscribeDocs = firebaseService.subscribeGeneratedDocsBySchool(currentUser.school, (logs) => {
-        const stats: Record<string, Set<string>> = {};
-        logs.forEach(log => {
-            if (!stats[log.teacherNip]) stats[log.teacherNip] = new Set();
-            stats[log.teacherNip].add(log.docType);
-        });
+      // GANTI: Menggunakan School Stats Aggregation untuk performa tinggi
+      // Alih-alih subscribeGeneratedDocsBySchool (fetch all logs), kita ambil dari school_stats
+      const unsubscribeStats = firebaseService.subscribeSchoolStats((allStats) => {
+        const mySchoolId = currentUser.school?.replace(/\s+/g, '_').toLowerCase();
+        const mySchoolStats = allStats.find(s => s.schoolName === currentUser.school || s.id === mySchoolId);
         
-        const counts: Record<string, number> = {};
-        Object.keys(stats).forEach(nip => {
-            counts[nip] = stats[nip].size;
-        });
-        setGeneratedStats(counts);
+        if (mySchoolStats && mySchoolStats.teachers) {
+             const stats: Record<string, number> = {};
+             // Map teacher stats
+             Object.keys(mySchoolStats.teachers).forEach(nip => {
+                 // Disini kita bisa ambil total docs
+                 stats[nip] = mySchoolStats.teachers[nip].docs || 0;
+             });
+             setGeneratedStats(stats);
+        }
       });
 
       return () => {
-        unsubscribeUsers();
-        unsubscribeSup();
-        unsubscribeDocs();
+        if (unsubscribeUsers) unsubscribeUsers();
+        if (unsubscribeSup) unsubscribeSup();
+        if (unsubscribeStats) unsubscribeStats();
       };
     }
   }, []);

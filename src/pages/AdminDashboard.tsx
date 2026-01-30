@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, LogOut, Settings, Plus, Trash2, Activity } from 'lucide-react';
-import { storageService, User, isUserOnline } from '../services/storage';
+import { LayoutDashboard, Users, LogOut, Settings, Plus, Trash2, Activity, Pencil } from 'lucide-react';
+import { User, isUserOnline } from '../services/storage';
 import { firebaseService } from '../services/firebaseService';
 import RunningText from '../components/RunningText';
+import { auth } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 
 
 const AdminDashboard = () => {
@@ -78,31 +80,68 @@ const AdminDashboard = () => {
 const AdminHome = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchData = () => {
-    const allUsers = storageService.getUsers();
-    setUsers(allUsers);
-    setOnlineCount(allUsers.filter(u => isUserOnline(u.lastSeen)).length);
-  };
-  
   useEffect(() => {
-    fetchData();
+    let unsubscribeUsers: (() => void) | undefined;
 
-    const handleExternalUpdate = () => {
-      fetchData();
+    const init = async () => {
+      try {
+        if (!auth.currentUser) {
+          await signInAnonymously(auth);
+        }
+        
+        // Mengambil data langsung dari Firebase Server (Realtime)
+        unsubscribeUsers = firebaseService.subscribeUsers(
+          (serverUsers) => {
+            setUsers(serverUsers);
+            // Hitung online users
+            setOnlineCount(serverUsers.filter(u => isUserOnline(u.lastSeen)).length);
+            setError(null);
+          },
+          (err) => {
+            // Callback error realtime dari Firestore
+            console.error("Firestore subscribe error:", err);
+            if (err?.code === 'permission-denied') {
+              setError('Izin akses ditolak. Mohon ubah Firestore Rules ke mode publik atau allow read/write.');
+            } else {
+              setError(`Gagal terhubung ke database: ${err.message}`);
+            }
+          }
+        );
+      } catch (err: any) {
+        console.error("Error connecting to server:", err);
+        if (err?.code === 'auth/configuration-not-found') {
+          setError('Fitur Autentikasi belum diaktifkan di Firebase Console. Mohon aktifkan "Anonymous" sign-in provider.');
+        } else if (err?.code === 'permission-denied') {
+          setError('Izin akses ditolak. Pastikan Security Rules mengizinkan akses.');
+        } else {
+          setError('Gagal terhubung ke server. Cek koneksi internet atau konfigurasi Firebase.');
+        }
+      }
     };
 
-    window.addEventListener('external-users-update', handleExternalUpdate);
-    const interval = setInterval(fetchData, 60000);
+    init();
 
     return () => {
-      window.removeEventListener('external-users-update', handleExternalUpdate);
-      clearInterval(interval);
+      if (unsubscribeUsers) unsubscribeUsers();
     };
   }, []);
 
   const guruCount = users.filter(u => u.role === 'guru').length;
   
+  if (error) {
+    return (
+      <div className="rounded-lg bg-red-50 p-4 text-red-700 border border-red-200">
+        <div className="font-bold mb-2">Terjadi Kesalahan Koneksi Server:</div>
+        <p>{error}</p>
+        <p className="text-sm mt-2 text-red-600">
+          Tips: Buka Firebase Console &gt; Authentication &gt; Sign-in method &gt; Aktifkan <strong>Anonymous</strong>.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-6 md:grid-cols-3">
       {/* Total User Card */}
@@ -154,47 +193,77 @@ const AdminUsers = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [newUser, setNewUser] = useState<User>({ nip: '', name: '', role: 'guru', active: true });
   const [isAdding, setIsAdding] = useState(false);
+  const [isEditing, setIsEditing] = useState(false); // Mode edit
   const [now, setNow] = useState(() => new Date());
-
-  const fetchUsers = () => {
-    setUsers(storageService.getUsers());
-  };
-
   useEffect(() => {
-    fetchUsers();
+    let unsubscribeUsers: (() => void) | undefined;
 
-    const handleExternalUpdate = () => {
-      fetchUsers();
+    const init = async () => {
+      try {
+        if (!auth.currentUser) {
+          await signInAnonymously(auth);
+        }
+
+        // Subscribe langsung ke Firebase untuk data realtime dan akurat
+        unsubscribeUsers = firebaseService.subscribeUsers((serverUsers) => {
+          setUsers(serverUsers);
+        });
+      } catch (error) {
+        console.error("Error connecting to server:", error);
+      }
     };
 
-    window.addEventListener('external-users-update', handleExternalUpdate);
-    const interval = setInterval(fetchUsers, 60000); // Update for online status
+    init();
+
+    // Update waktu lokal untuk status online/offline
     const onlineInterval = setInterval(() => setNow(new Date()), 10000);
 
     return () => {
-      window.removeEventListener('external-users-update', handleExternalUpdate);
-      clearInterval(interval);
+      if (unsubscribeUsers) unsubscribeUsers();
       clearInterval(onlineInterval);
     };
   }, []);
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.nip || !newUser.name) return;
     
-    storageService.saveUser(newUser);
-    // No need to setUsers here as it will trigger external-users-update eventually via sync,
-    // but for immediate local feedback:
-    fetchUsers();
-    setNewUser({ nip: '', name: '', role: 'guru', active: true });
-    setIsAdding(false);
+    // Simpan langsung ke Firebase
+    try {
+      await firebaseService.saveUser(newUser);
+      setNewUser({ nip: '', name: '', role: 'guru', active: true });
+      setIsAdding(false);
+      setIsEditing(false);
+      // Tidak perlu fetch manual, subscription akan update otomatis
+    } catch (error) {
+      alert('Gagal menyimpan user ke server');
+      console.error(error);
+    }
   };
 
-  const handleDelete = (nip: string) => {
+  const handleEdit = (user: User) => {
+    setNewUser(user);
+    setIsAdding(true);
+    setIsEditing(true);
+    // Scroll ke form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDelete = async (nip: string) => {
     if (window.confirm('Yakin ingin menghapus user ini?')) {
-      storageService.deleteUser(nip);
-      fetchUsers();
+      try {
+        await firebaseService.deleteUser(nip);
+      } catch (error) {
+        alert('Gagal menghapus user dari server');
+        console.error(error);
+      }
     }
+  };
+
+  const handleCancel = () => {
+    setIsAdding(false);
+    setIsEditing(false);
+    setNewUser({ nip: '', name: '', role: 'guru', active: true });
   };
 
   return (
@@ -202,24 +271,32 @@ const AdminUsers = () => {
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Daftar Pengguna</h2>
         <button 
-          onClick={() => setIsAdding(!isAdding)}
+          onClick={() => {
+            setIsAdding(!isAdding);
+            if (!isAdding) {
+              setNewUser({ nip: '', name: '', role: 'guru', active: true });
+              setIsEditing(false);
+            }
+          }}
           className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
         >
-          <Plus size={16} /> Tambah User
+          <Plus size={16} /> {isAdding ? 'Tutup Form' : 'Tambah User'}
         </button>
       </div>
 
       {isAdding && (
-        <form onSubmit={handleAddUser} className="mb-8 rounded-lg border bg-gray-50 p-4">
+        <form onSubmit={handleAddUser} className="mb-8 rounded-lg border bg-gray-50 p-4 shadow-sm">
+          <h3 className="mb-4 font-semibold text-gray-700">{isEditing ? 'Edit User' : 'Tambah User Baru'}</h3>
           <div className="grid gap-4 md:grid-cols-3">
             <div>
-              <label className="mb-1 block text-sm font-medium">NIP</label>
+              <label className="mb-1 block text-sm font-medium">NIP {isEditing && <span className="text-xs text-gray-500">(Tidak dapat diubah)</span>}</label>
               <input 
                 type="text" 
                 value={newUser.nip}
                 onChange={e => setNewUser({...newUser, nip: e.target.value})}
-                className="w-full rounded border p-2"
+                className={`w-full rounded border p-2 ${isEditing ? 'bg-gray-200 text-gray-500' : ''}`}
                 required
+                disabled={isEditing}
               />
             </div>
             <div>
@@ -268,8 +345,10 @@ const AdminUsers = () => {
             </div>
           </div>
           <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setIsAdding(false)} className="rounded px-4 py-2 hover:bg-gray-200">Batal</button>
-            <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">Simpan</button>
+            <button type="button" onClick={handleCancel} className="rounded px-4 py-2 hover:bg-gray-200">Batal</button>
+            <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
+              {isEditing ? 'Update User' : 'Simpan User'}
+            </button>
           </div>
         </form>
       )}
@@ -301,13 +380,22 @@ const AdminUsers = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <button 
-                      onClick={() => handleDelete(user.nip)}
-                      className="text-red-600 hover:text-red-800"
-                      title="Hapus"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleEdit(user)}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Edit"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(user.nip)}
+                        className="text-red-600 hover:text-red-800"
+                        title="Hapus"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -325,12 +413,29 @@ const AdminSettings = () => {
 
   // Load initial text
   useEffect(() => {
-    // Kita subscribe sekali saja untuk mendapatkan nilai awal
-    const unsubscribe = firebaseService.subscribeRunningText((text) => {
-      // Hanya set jika state masih kosong agar tidak menimpa ketikan user
-      setRunningText((prev) => prev || text);
-    });
-    return () => unsubscribe();
+    let unsubscribe: (() => void) | undefined;
+
+    const init = async () => {
+      try {
+        if (!auth.currentUser) {
+          await signInAnonymously(auth);
+        }
+        
+        // Kita subscribe sekali saja untuk mendapatkan nilai awal
+        unsubscribe = firebaseService.subscribeRunningText((text) => {
+          // Hanya set jika state masih kosong agar tidak menimpa ketikan user
+          setRunningText((prev) => prev || text);
+        });
+      } catch (error) {
+        console.error("Error loading settings:", error);
+      }
+    };
+
+    init();
+    
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const handleSave = async () => {

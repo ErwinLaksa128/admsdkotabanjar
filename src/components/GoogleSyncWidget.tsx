@@ -20,6 +20,11 @@ const GoogleSyncWidget = () => {
         }
       });
     }
+    
+    // Auto-show help if not on localhost to assist with redirect_uri_mismatch
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+       setShowTroubleshoot(true);
+    }
   }, []);
 
   const handleSignIn = async () => {
@@ -124,37 +129,54 @@ const GoogleSyncWidget = () => {
 
           {/* Troubleshooting Section */}
           {showTroubleshoot && (
-            <div className="rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-100 space-y-3">
+            <div className="rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-100 space-y-3 animate-in fade-in slide-in-from-top-2">
               <p className="font-bold text-sm border-b border-red-200 pb-1">Panduan Mengatasi Masalah Login</p>
               
               <div>
-                <p className="font-bold text-red-800 mb-1">1. Error "Access blocked" (Akses diblokir):</p>
+                <p className="font-bold text-red-800 mb-1">Masalah Akses dari Device Lain / Network:</p>
                 <p className="mb-1">
-                  Status aplikasi di Google Console masih <strong>"Testing"</strong>. Google membatasi login hanya untuk email yang sudah didaftarkan secara manual.
+                  Jika Anda melihat error <strong>400: redirect_uri_mismatch</strong>, itu karena Anda mengakses aplikasi ini melalui alamat IP jaringan (<code>{window.location.hostname}</code>), bukan <code>localhost</code>.
                 </p>
-                <p className="bg-white p-2 rounded border border-red-200 text-gray-600">
-                  <strong>Solusi 1 (Testing):</strong> Tambahkan email di menu <em>OAuth consent screen</em> &gt; <em>Test users</em>.<br/>
-                  <strong>Solusi 2 (Public):</strong> Klik tombol <strong>"PUBLISH APP"</strong> di <em>OAuth consent screen</em> agar semua akun bisa login (mungkin perlu verifikasi Google).
+                <p className="mb-2">
+                  Google memblokir akses dari alamat IP yang belum didaftarkan demi keamanan.
+                </p>
+                <p className="font-semibold text-gray-700 mb-1">Solusi:</p>
+                <ol className="list-decimal pl-4 space-y-1 text-gray-600">
+                  <li>Buka <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Google Cloud Console (Credentials)</a>.</li>
+                  <li>Edit <strong>OAuth 2.0 Client ID</strong> yang Anda gunakan.</li>
+                  <li>Pada bagian <strong>Authorized JavaScript origins</strong>, tambahkan URL ini:</li>
+                </ol>
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="flex-1 bg-white p-2 rounded border border-red-200 font-mono text-xs select-all">
+                    {window.location.origin}
+                  </code>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(window.location.origin)}
+                    className="p-2 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-600"
+                    title="Salin URL"
+                  >
+                    Salin
+                  </button>
+                </div>
+                <p className="mt-2 text-[10px] text-gray-500 italic">
+                  Catatan: Perubahan di Google Console mungkin butuh waktu beberapa menit untuk aktif.
                 </p>
               </div>
 
-              <div>
-                <p className="font-bold text-red-800 mb-1">2. Error "redirect_uri_mismatch":</p>
+              <div className="border-t border-red-200 pt-2 mt-2">
+                <p className="font-bold text-red-800 mb-1">Masalah Lain (Access blocked):</p>
                 <p className="mb-1">
-                  URL aplikasi belum dikenali oleh Google. Tambahkan URL di bawah ini ke <em>Authorized JavaScript origins</em> di pengaturan Client ID Anda:
+                  Jika status aplikasi masih <strong>Testing</strong>, pastikan email Anda sudah ditambahkan di menu <em>OAuth consent screen</em> &gt; <em>Test users</em>.
                 </p>
-                <div className="bg-white p-1 px-2 rounded border border-red-200 font-mono inline-block">
-                  {window.location.origin}
-                </div>
               </div>
             </div>
           )}
           
           <button 
             onClick={() => setShowTroubleshoot(!showTroubleshoot)}
-            className="text-[10px] text-gray-400 underline hover:text-gray-600 w-full text-center"
+            className="text-xs text-blue-600 underline hover:text-blue-800 w-full text-center py-1 font-medium"
           >
-            {showTroubleshoot ? 'Sembunyikan Bantuan' : 'Bantuan Koneksi'}
+            {showTroubleshoot ? 'Sembunyikan Bantuan' : 'Tampilkan Bantuan Koneksi / Error'}
           </button>
         </div>
       ) : (
