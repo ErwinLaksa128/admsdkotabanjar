@@ -134,8 +134,12 @@ const GoogleSyncWidget = () => {
               
               <div>
                 <p className="font-bold text-red-800 mb-1">Masalah Akses dari Device Lain / Network:</p>
+                <div className="bg-white p-2 rounded border border-gray-200 mb-2 text-[10px] font-mono">
+                   <p><strong>Status:</strong> {window.location.hostname === 'localhost' ? 'Local Development' : 'Production/Network'}</p>
+                   <p><strong>Active Client ID:</strong> {GOOGLE_CONFIG.CLIENT_ID.substring(0, 15)}...</p>
+                </div>
                 <p className="mb-1">
-                  Jika Anda melihat error <strong>400: redirect_uri_mismatch</strong>, itu karena Anda mengakses aplikasi ini melalui alamat IP jaringan (<code>{window.location.hostname}</code>), bukan <code>localhost</code>.
+                  Jika Anda melihat error <strong>400: redirect_uri_mismatch</strong> atau <strong>Access blocked</strong>, pastikan URL di bawah ini sudah ditambahkan ke Google Cloud Console.
                 </p>
                 <p className="mb-2">
                   Google memblokir akses dari alamat IP yang belum didaftarkan demi keamanan.

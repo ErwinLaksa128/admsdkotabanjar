@@ -3,6 +3,7 @@ export interface User {
   nip: string;
   name: string;
   role: 'guru' | 'kepala-sekolah' | 'pengawas' | 'administrasi' | 'admin';
+  email?: string; // Email untuk login Google
   active: boolean;
   school?: string; // Menambahkan field sekolah
   photo?: string; // Menyimpan foto profil (base64)
@@ -16,6 +17,16 @@ export interface User {
   wilayahBinaan?: string;
   managedSchools?: string[]; // List of schools assigned to this user (for Pengawas)
   lastSeen?: string; // ISO date string for online status
+  
+  // Additional fields for Kepala Sekolah
+  pangkat?: string;
+  jabatan?: string;
+  kecamatan?: string;
+  
+  // Workload Evidence Links
+  workloadEvidence?: Record<string, string>;
+  // Workload Scores from Pengawas (0-100)
+  workloadScores?: Record<string, number>;
 }
 
 export const DEFAULT_USERS: User[] = [

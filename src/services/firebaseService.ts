@@ -1,4 +1,5 @@
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, deleteDoc, collection, updateDoc, query, where, orderBy, runTransaction, increment, getDocs } from 'firebase/firestore';
 import { User, SupervisionReport, SchoolVisit } from './storage';
 
@@ -11,6 +12,29 @@ const SCHOOL_STATS_COLLECTION = 'school_stats';
 const SCHOOL_VISITS_COLLECTION = 'school_visits';
 
 export const firebaseService = {
+  // Login with Google
+  loginWithGoogle: async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // Find user by email in Firestore
+      const q = query(collection(db, USERS_COLLECTION), where("email", "==", user.email));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const userData = querySnapshot.docs[0].data() as User;
+        return { success: true, user: userData, googleUser: user };
+      } else {
+        return { success: false, googleUser: user, message: 'Email belum terdaftar.' };
+      }
+    } catch (error) {
+      console.error("Google Login Error:", error);
+      throw error;
+    }
+  },
+
   // Subscribe to Running Text changes (Realtime)
   subscribeRunningText: (callback: (text: string) => void) => {
     const docRef = doc(db, SETTINGS_COLLECTION, RUNNING_TEXT_DOC);

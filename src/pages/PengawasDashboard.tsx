@@ -7,6 +7,7 @@ import { firebaseService } from '../services/firebaseService'
 import { auth } from '../lib/firebase'
 import { signInAnonymously } from 'firebase/auth'
 import { User, storageService, SchoolVisit } from '../services/storage'
+import { MANAJERIAL_DOCS, KEWIRAUSAHAAN_DOCS, SUPERVISI_EVIDENCE_DOCS } from '../constants/documents'
 
 
 
@@ -32,6 +33,37 @@ const PengawasHome = () => {
   const [visitReports, setVisitReports] = useState<SchoolVisit[]>([]);
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [editingVisit, setEditingVisit] = useState<SchoolVisit | null>(null);
+
+  // Assessment Modal State
+  const [isAssessmentModalOpen, setIsAssessmentModalOpen] = useState(false);
+  const [activeAssessmentPrincipal, setActiveAssessmentPrincipal] = useState<User | null>(null);
+  const [assessmentScores, setAssessmentScores] = useState<Record<string, number>>({});
+
+  const handleOpenAssessment = (principal: User) => {
+    setActiveAssessmentPrincipal(principal);
+    setAssessmentScores(principal.workloadScores || {});
+    setIsAssessmentModalOpen(true);
+  };
+
+  const handleSaveAssessment = async () => {
+    if (!activeAssessmentPrincipal) return;
+    setIsSaving(true);
+    try {
+        const updatedUser = {
+            ...activeAssessmentPrincipal,
+            workloadScores: assessmentScores
+        };
+        await firebaseService.saveUser(updatedUser);
+        
+        setIsAssessmentModalOpen(false);
+        setActiveAssessmentPrincipal(null);
+    } catch (error) {
+        console.error("Failed to save assessment", error);
+        alert("Gagal menyimpan penilaian.");
+    } finally {
+        setIsSaving(false);
+    }
+  };
 
   // Subscribe to visits when school is selected
   useEffect(() => {
@@ -169,14 +201,31 @@ const PengawasHome = () => {
     }
   };
 
-  const handleCreateVisit = () => {
-    if (!currentUser || !selectedSchool) return;
+  const handleCreateVisit = (schoolName?: string) => {
+    const targetSchool = typeof schoolName === 'string' ? schoolName : selectedSchool;
+    
+    // Try to recover user session if missing
+    let effectiveUser = currentUser;
+    if (!effectiveUser) {
+        const storedUser = storageService.getCurrentUser();
+        if (storedUser) {
+            effectiveUser = storedUser;
+            setCurrentUser(storedUser);
+        }
+    }
+
+    if (!effectiveUser) {
+        alert("Sesi pengguna tidak valid. Silakan login kembali.");
+        return;
+    }
+
+    if (!targetSchool) return;
     
     const newVisit: SchoolVisit = {
-      id: crypto.randomUUID(),
-      schoolName: selectedSchool,
-      visitorNip: currentUser.nip,
-      visitorName: currentUser.name,
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      schoolName: targetSchool,
+      visitorNip: effectiveUser.nip,
+      visitorName: effectiveUser.name,
       date: new Date().toISOString().split('T')[0],
       purpose: '',
       findings: '',
@@ -277,6 +326,19 @@ const PengawasHome = () => {
               const maxDocs = teacherCount * 22; 
               const progressPercent = maxDocs > 0 ? Math.round((totalTeacherDocs / maxDocs) * 100) : 0;
 
+              // Hitung progress KS
+              let ksProgressPercent = 0;
+              if (principal) {
+                  const totalItems = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length;
+                  const allIds = [
+                      ...MANAJERIAL_DOCS.map(d => d.id),
+                      ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
+                      ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
+                  ];
+                  const filledCount = allIds.filter(id => principal.workloadEvidence?.[id]).length;
+                  ksProgressPercent = Math.round((filledCount / totalItems) * 100);
+              }
+
               return (
                 <button
                   key={school}
@@ -297,6 +359,17 @@ const PengawasHome = () => {
                         <div 
                             className="h-2 rounded-full bg-blue-500 transition-all" 
                             style={{ width: `${progressPercent}%` }}
+                        />
+                     </div>
+
+                     <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>Progress Kepala Sekolah</span>
+                        <span>{ksProgressPercent}%</span>
+                     </div>
+                     <div className="h-2 w-full rounded-full bg-gray-100">
+                        <div 
+                            className="h-2 rounded-full bg-purple-500 transition-all" 
+                            style={{ width: `${ksProgressPercent}%` }}
                         />
                      </div>
                   </div>
@@ -370,16 +443,60 @@ const PengawasHome = () => {
                           
                           {/* Progress Tugas Tambahan Kepala Sekolah */}
                           <div className="mt-1 border-t border-purple-100 pt-2">
-                              <div className="flex justify-between text-xs text-purple-800 mb-1">
-                                  <span>Progress Tugas Tambahan (18 Item)</span>
-                                  <span>0%</span>
-                              </div>
-                              <div className="h-1.5 w-full rounded-full bg-purple-200">
-                                  <div className="h-1.5 rounded-full bg-purple-600" style={{ width: '0%' }} />
-                              </div>
-                              <p className="text-[10px] text-purple-500 mt-1 italic">
-                                  Menunggu implementasi modul Tugas Tambahan KS
-                              </p>
+                              {(() => {
+                                  const totalItems = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length; // 18
+                                  const allIds = [
+                                      ...MANAJERIAL_DOCS.map(d => d.id),
+                                      ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
+                                      ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
+                                  ];
+                                  const filledCount = allIds.filter(id => user.workloadEvidence?.[id]).length;
+                                  const progressPercent = Math.round((filledCount / totalItems) * 100);
+                                  
+                                  // Score Calculation
+                                  let totalScore = 0;
+                                  let scoredCount = 0;
+                                  if (user.workloadScores) {
+                                      Object.values(user.workloadScores).forEach(score => {
+                                          totalScore += score;
+                                          scoredCount++;
+                                      });
+                                  }
+                                  const avgScore = totalScore / 18;
+                                  const category = avgScore <= 60 ? 'Perlu Perbaikan' : 
+                                                   avgScore <= 75 ? 'Cukup' : 
+                                                   avgScore <= 90 ? 'Baik' : 'Sangat Baik';
+                                  const categoryColor = avgScore <= 60 ? 'text-red-600' : 
+                                                        avgScore <= 75 ? 'text-yellow-600' : 
+                                                        avgScore <= 90 ? 'text-blue-600' : 'text-green-600';
+
+                                  return (
+                                      <>
+                                          <div className="flex justify-between text-xs text-purple-800 mb-1">
+                                              <span>Progress Tugas Tambahan ({filledCount}/{totalItems})</span>
+                                              <span className="font-bold">{progressPercent}%</span>
+                                          </div>
+                                          <div className="h-1.5 w-full rounded-full bg-purple-200 mb-2">
+                                              <div className="h-1.5 rounded-full bg-purple-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                                          </div>
+                                          
+                                          {scoredCount > 0 && (
+                                              <div className="flex justify-between items-center text-xs mb-2">
+                                                  <span className="text-gray-600">Nilai: <span className="font-bold">{avgScore.toFixed(1)}</span></span>
+                                                  <span className={`font-bold ${categoryColor}`}>{category}</span>
+                                              </div>
+                                          )}
+
+                                          <button 
+                                              onClick={() => handleOpenAssessment(user)}
+                                              className="w-full mt-1 flex items-center justify-center gap-1 rounded bg-purple-100 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-200 transition"
+                                          >
+                                              <CheckSquare size={14} />
+                                              Nilai Beban Kerja
+                                          </button>
+                                      </>
+                                  );
+                              })()}
                           </div>
                         </div>
                       ))
@@ -452,7 +569,10 @@ const PengawasHome = () => {
                      Laporan Kunjungan
                    </h4>
                    <button
-                     onClick={handleCreateVisit}
+                     onClick={() => {
+                        console.log("Tombol Buat Laporan diklik");
+                        handleCreateVisit();
+                     }}
                      className="flex items-center gap-1 rounded-md bg-purple-100 px-3 py-1 text-xs font-medium text-purple-700 hover:bg-purple-200 transition"
                    >
                      <PlusCircle size={14} />
@@ -490,7 +610,7 @@ const PengawasHome = () => {
                   ) : (
                     <div className="text-center py-6 border border-dashed rounded-lg">
                       <p className="text-sm text-gray-400">Belum ada laporan kunjungan.</p>
-                      <button onClick={handleCreateVisit} className="text-xs text-purple-600 hover:underline mt-1">
+                      <button onClick={() => handleCreateVisit()} className="text-xs text-purple-600 hover:underline mt-1">
                         Buat Laporan Baru
                       </button>
                     </div>
@@ -603,11 +723,10 @@ const PengawasHome = () => {
                        className="w-full rounded-md border border-gray-300 p-2 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                     >
                        <option value="">-- Pilih Tujuan --</option>
+                       <option value="Supervisi Manajerial">Supervisi Manajerial</option>
                        <option value="Monitoring Rutin">Monitoring Rutin</option>
                        <option value="Supervisi Akademik">Supervisi Akademik</option>
-                       <option value="Supervisi Manajerial">Supervisi Manajerial</option>
                        <option value="Evaluasi Program">Evaluasi Program</option>
-                       <option value="Lainnya">Lainnya</option>
                     </select>
                  </div>
 
@@ -661,6 +780,107 @@ const PengawasHome = () => {
                        <>
                           <Save size={16} />
                           Simpan Laporan
+                       </>
+                    )}
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Assessment Modal */}
+      {isAssessmentModalOpen && activeAssessmentPrincipal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+           <div className="w-full max-w-4xl rounded-xl bg-white shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+              <div className="flex items-center justify-between border-b p-6 bg-purple-50 rounded-t-xl">
+                 <div>
+                    <h3 className="text-lg font-bold text-purple-900 flex items-center gap-2">
+                        <CheckSquare className="h-5 w-5" />
+                        Penilaian Beban Kerja Kepala Sekolah
+                    </h3>
+                    <p className="text-sm text-purple-700">{activeAssessmentPrincipal.name} - {activeAssessmentPrincipal.school}</p>
+                 </div>
+                 <button onClick={() => setIsAssessmentModalOpen(false)} className="rounded-full p-2 text-gray-500 hover:bg-white/50 transition">
+                    <X className="h-5 w-5" />
+                 </button>
+              </div>
+
+              <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                 {/* Helper to render sections */}
+                 {[
+                    { title: "Tugas Manajerial", docs: MANAJERIAL_DOCS },
+                    { title: "Pengembangan Kewirausahaan", docs: KEWIRAUSAHAAN_DOCS },
+                    { title: "Supervisi Guru dan Tendik", docs: SUPERVISI_EVIDENCE_DOCS }
+                 ].map((section, idx) => (
+                    <div key={idx} className="border rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 px-4 py-2 border-b font-semibold text-gray-700">
+                            {section.title}
+                        </div>
+                        <div className="divide-y">
+                            {section.docs.map((doc) => {
+                                const score = assessmentScores[doc.id] || 0;
+                                const hasEvidence = activeAssessmentPrincipal.workloadEvidence?.[doc.id];
+                                
+                                return (
+                                    <div key={doc.id} className="p-4 flex items-center justify-between gap-4 hover:bg-gray-50">
+                                        <div className="flex-1">
+                                            <p className="font-medium text-gray-800 text-sm">{doc.label}</p>
+                                            {hasEvidence ? (
+                                                <a href={activeAssessmentPrincipal.workloadEvidence?.[doc.id]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-blue-600 hover:underline">
+                                                    <Check size={12} /> Lihat Bukti
+                                                </a>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 mt-2 text-xs text-red-500">
+                                                    <X size={12} /> Belum ada bukti
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="w-24">
+                                            <input 
+                                                type="number" 
+                                                min="0" 
+                                                max="100"
+                                                value={score}
+                                                onChange={(e) => {
+                                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                                    setAssessmentScores(prev => ({
+                                                        ...prev,
+                                                        [doc.id]: val
+                                                    }));
+                                                }}
+                                                className="w-full text-center rounded-md border border-gray-300 p-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                 ))}
+              </div>
+
+              <div className="border-t p-4 flex justify-end gap-3 bg-gray-50 rounded-b-xl">
+                 <div className="flex-1 flex items-center text-sm text-gray-600">
+                    <span>Rata-rata Nilai: </span>
+                    <span className="ml-2 font-bold text-lg text-purple-700">
+                        {(Object.values(assessmentScores).reduce((a, b) => a + b, 0) / 18).toFixed(1)}
+                    </span>
+                 </div>
+                 <button 
+                    onClick={() => setIsAssessmentModalOpen(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-lg transition"
+                 >
+                    Batal
+                 </button>
+                 <button 
+                    onClick={handleSaveAssessment}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition disabled:opacity-50"
+                 >
+                    {isSaving ? 'Menyimpan...' : (
+                       <>
+                          <Save size={16} />
+                          Simpan Penilaian
                        </>
                     )}
                  </button>

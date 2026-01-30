@@ -2,8 +2,8 @@
 // ANDA HARUS MENGGANTI INI DENGAN CLIENT ID DAN API KEY ANDA SENDIRI
 // DARI GOOGLE CLOUD CONSOLE (https://console.cloud.google.com)
 export const GOOGLE_CONFIG = {
-  CLIENT_ID: '728652025080-hfmnhq9fllle99evp1g85q64k7q9emvj.apps.googleusercontent.com', // Masukkan Client ID Anda di sini
-  API_KEY: 'AIzaSyDh8ILXKrq91C5-VzAv2sEVbuAg7tZ0YL8',   // Masukkan API Key Anda di sini
+  CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID, // Masukkan Client ID Anda di sini
+  API_KEY: import.meta.env.VITE_GOOGLE_API_KEY,   // Masukkan API Key Anda di sini
   // Discovery doc URL for APIs used by the quickstart
   DISCOVERY_DOC: 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
   // Authorization scopes required by the API; multiple scopes can be

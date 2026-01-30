@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, School, BookOpen, Building2, ChevronLeft, Edit2 } from 'lucide-react';
 import { storageService } from '../services/storage';
+import { firebaseService } from '../services/firebaseService';
 
 const MAIN_ROLES = [
   { id: 'guru', label: 'Guru', icon: <User size={24} /> },
@@ -43,6 +44,11 @@ const Login = () => {
     
     // Pengawas Specific
     wilayahBinaan: '',
+
+    // Kepala Sekolah Specific
+    pangkat: '',
+    jabatan: '',
+    kecamatan: '',
   });
 
   const [error, setError] = useState('');
@@ -58,6 +64,32 @@ const Login = () => {
     const newCount = clickCount + 1;
     setClickCount(newCount);
     if (newCount === 5) navigate('/admin');
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    try {
+      const result = await firebaseService.loginWithGoogle();
+      if (result.success && result.user) {
+        // Save session
+        storageService.setCurrentUser(result.user);
+        storageService.saveUser(result.user); // Ensure latest data is saved
+
+        // Redirect based on role
+        switch (result.user.role) {
+          case 'guru': navigate('/guru'); break;
+          case 'kepala-sekolah': navigate('/kepala-sekolah'); break;
+          case 'pengawas': navigate('/pengawas'); break;
+          case 'administrasi': navigate('/administrasi'); break;
+          default: navigate('/');
+        }
+      } else {
+        setError(`Email ${result.googleUser.email} belum terdaftar. Silakan hubungi Admin atau login manual.`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Gagal login dengan Google: ' + (err.message || 'Terjadi kesalahan'));
+    }
   };
 
   const handleRoleSelect = (roleId: string) => {
@@ -249,6 +281,11 @@ const Login = () => {
       pengawasName: formData.pengawasName || user.pengawasName,
       pengawasNip: formData.pengawasNip || user.pengawasNip,
       wilayahBinaan: formData.wilayahBinaan || user.wilayahBinaan,
+
+      // Kepala Sekolah fields
+      pangkat: formData.pangkat || user.pangkat,
+      jabatan: formData.jabatan || user.jabatan,
+      kecamatan: formData.kecamatan || user.kecamatan,
       
       displayName: (selectedMainRole === 'guru' ? formData.userName : 
                    selectedMainRole === 'kepala-sekolah' ? formData.kepsekName : 
@@ -295,19 +332,38 @@ const Login = () => {
 
         {/* STEP 1: SELECT ROLE */}
         {step === 'select-role' && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {MAIN_ROLES.map((role) => (
-              <button
-                key={role.id}
-                onClick={() => handleRoleSelect(role.id)}
-                className="flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white p-6 transition hover:border-blue-500 hover:bg-blue-50 hover:shadow-md"
-              >
-                <div className="rounded-full bg-blue-100 p-3 text-blue-600">
-                  {role.icon}
-                </div>
-                <span className="font-semibold text-gray-800">{role.label}</span>
-              </button>
-            ))}
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {MAIN_ROLES.map((role) => (
+                <button
+                  key={role.id}
+                  onClick={() => handleRoleSelect(role.id)}
+                  className="flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white p-6 transition hover:border-blue-500 hover:bg-blue-50 hover:shadow-md"
+                >
+                  <div className="rounded-full bg-blue-100 p-3 text-blue-600">
+                    {role.icon}
+                  </div>
+                  <span className="font-semibold text-gray-800">{role.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-2 text-gray-500">Atau masuk dengan akun</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full flex items-center justify-center gap-3 rounded-xl border border-gray-300 bg-white p-3 hover:bg-gray-50 transition"
+            >
+               <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" />
+               <span className="font-medium text-gray-700">Masuk dengan Google</span>
+            </button>
           </div>
         )}
 
@@ -505,6 +561,59 @@ const Login = () => {
                                 placeholder="Contoh: SDN 1 Banjar"
                             />
                         </div>
+
+                        {/* Additional Fields for Kepala Sekolah */}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Pangkat/Gol/Ruang</label>
+                              <select
+                                required
+                                value={formData.pangkat}
+                                onChange={(e) => handleInputChange('pangkat', e.target.value)}
+                                className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                              >
+                                <option value="">Pilih Pangkat/Golongan</option>
+                                <option value="Penata, III/c">Penata, III/c</option>
+                                <option value="Penata Tingkat I, III/d">Penata Tingkat I, III/d</option>
+                                <option value="Pembina, IV/a">Pembina, IV/a</option>
+                                <option value="Pembina Tingkat I, IV/b">Pembina Tingkat I, IV/b</option>
+                                <option value="Pembina Utama Muda, IV/c">Pembina Utama Muda, IV/c</option>
+                                <option value="Pembina Utama Madya, IV/d">Pembina Utama Madya, IV/d</option>
+                                <option value="Pembina Utama, IV/e">Pembina Utama, IV/e</option>
+                              </select>
+                           </div>
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
+                              <select
+                                required
+                                value={formData.jabatan}
+                                onChange={(e) => handleInputChange('jabatan', e.target.value)}
+                                className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                              >
+                                <option value="">Pilih Jabatan</option>
+                                <option value="Guru Ahli Muda">Guru Ahli Muda</option>
+                                <option value="Guru Ahli Madya">Guru Ahli Madya</option>
+                                <option value="Guru Ahli Utama">Guru Ahli Utama</option>
+                              </select>
+                           </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Kecamatan</label>
+                            <select
+                                required
+                                value={formData.kecamatan}
+                                onChange={(e) => handleInputChange('kecamatan', e.target.value)}
+                                className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                            >
+                                <option value="">Pilih Kecamatan</option>
+                                <option value="Banjar">Banjar</option>
+                                <option value="Pataruman">Pataruman</option>
+                                <option value="Purwaharja">Purwaharja</option>
+                                <option value="Langensari">Langensari</option>
+                            </select>
+                        </div>
+
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pengawas</label>
