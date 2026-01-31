@@ -319,7 +319,7 @@ const AdminUsers = () => {
                 <option value="guru">Guru</option>
                 <option value="kepala-sekolah">Kepala Sekolah</option>
                 <option value="pengawas">Pengawas</option>
-                <option value="administrasi">Administrasi</option>
+                <option value="dinas">Dinas Pendidikan</option>
                 <option value="admin">Admin Sistem</option>
               </select>
             </div>

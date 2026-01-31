@@ -6,7 +6,7 @@ import Login from './pages/Login';
 import SplashScreen from './components/SplashScreen';
 import KepalaSekolahDashboard from './pages/KepalaSekolahDashboard';
 import PengawasDashboard from './pages/PengawasDashboard';
-import AdministrasiDashboard from './pages/AdministrasiDashboard';
+import DinasDashboard from './pages/DinasDashboard';
 import UserSync from './components/UserSync';
 
 function App() {
@@ -27,7 +27,7 @@ function App() {
           <Route path="/guru/*" element={<GuruDashboard />} />
           <Route path="/kepala-sekolah/*" element={<KepalaSekolahDashboard />} />
           <Route path="/pengawas/*" element={<PengawasDashboard />} />
-          <Route path="/administrasi/*" element={<AdministrasiDashboard />} />
+          <Route path="/dinas/*" element={<DinasDashboard />} />
         </Routes>
       </div>
     </Router>

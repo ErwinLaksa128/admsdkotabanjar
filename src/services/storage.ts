@@ -2,7 +2,7 @@
 export interface User {
   nip: string;
   name: string;
-  role: 'guru' | 'kepala-sekolah' | 'pengawas' | 'administrasi' | 'admin';
+  role: 'guru' | 'kepala-sekolah' | 'pengawas' | 'dinas' | 'admin';
   email?: string; // Email untuk login Google
   active: boolean;
   school?: string; // Menambahkan field sekolah
@@ -33,7 +33,7 @@ export const DEFAULT_USERS: User[] = [
   { nip: '123456', name: 'Budi Santoso', role: 'guru', active: true, school: 'SDN 1 Banjar' },
   { nip: '111111', name: 'Drs. Asep', role: 'kepala-sekolah', active: true, school: 'SDN 1 Banjar' },
   { nip: '222222', name: 'Siti Aminah', role: 'pengawas', active: true, school: 'Dinas Pendidikan' },
-  { nip: '333333', name: 'Rina Admin', role: 'administrasi', active: true, school: 'SDN 1 Banjar' },
+  { nip: '333333', name: 'Rina Admin', role: 'dinas', active: true, school: 'Dinas Pendidikan' },
   { nip: '999999', name: 'Super Admin', role: 'admin', active: true, school: 'Pusat' },
 ];
 

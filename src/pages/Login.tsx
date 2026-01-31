@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, School, BookOpen, Building2, ChevronLeft, Edit2 } from 'lucide-react';
 import { storageService } from '../services/storage';
-import { firebaseService } from '../services/firebaseService';
 
 const MAIN_ROLES = [
   { id: 'guru', label: 'Guru', icon: <User size={24} /> },
   { id: 'kepala-sekolah', label: 'Kepala Sekolah', icon: <School size={24} /> },
   { id: 'pengawas', label: 'Pengawas Sekolah', icon: <BookOpen size={24} /> },
-  { id: 'administrasi', label: 'Administrasi Perkantoran', icon: <Building2 size={24} /> },
+  { id: 'dinas', label: 'Dinas Pendidikan', icon: <Building2 size={24} /> },
 ];
 
 const Login = () => {
@@ -66,31 +65,7 @@ const Login = () => {
     if (newCount === 5) navigate('/admin');
   };
 
-  const handleGoogleLogin = async () => {
-    setError('');
-    try {
-      const result = await firebaseService.loginWithGoogle();
-      if (result.success && result.user) {
-        // Save session
-        storageService.setCurrentUser(result.user);
-        storageService.saveUser(result.user); // Ensure latest data is saved
 
-        // Redirect based on role
-        switch (result.user.role) {
-          case 'guru': navigate('/guru'); break;
-          case 'kepala-sekolah': navigate('/kepala-sekolah'); break;
-          case 'pengawas': navigate('/pengawas'); break;
-          case 'administrasi': navigate('/administrasi'); break;
-          default: navigate('/');
-        }
-      } else {
-        setError(`Email ${result.googleUser.email} belum terdaftar. Silakan hubungi Admin atau login manual.`);
-      }
-    } catch (err: any) {
-      console.error(err);
-      setError('Gagal login dengan Google: ' + (err.message || 'Terjadi kesalahan'));
-    }
-  };
 
   const handleRoleSelect = (roleId: string) => {
     setSelectedMainRole(roleId);
@@ -160,7 +135,7 @@ const Login = () => {
                   if (user.kepsekNip) newData.kepsekNip = user.kepsekNip;
                   if (user.pengawasName) newData.pengawasName = user.pengawasName;
                   if (user.pengawasNip) newData.pengawasNip = user.pengawasNip;
-              } else if (role === 'administrasi') {
+              } else if (role === 'dinas') {
                   newData.userName = user.name;
                   if (user.school) newData.schoolName = user.school;
               } else if (role === 'kepala-sekolah') {
@@ -191,7 +166,7 @@ const Login = () => {
         (selectedMainRole === 'guru' && field === 'userNip') ||
         (selectedMainRole === 'kepala-sekolah' && field === 'kepsekNip') ||
         (selectedMainRole === 'pengawas' && field === 'pengawasNip') ||
-        (selectedMainRole === 'administrasi' && field === 'userNip')
+        (selectedMainRole === 'dinas' && field === 'userNip')
     ) {
         checkUserExistence(value, selectedMainRole);
     }
@@ -223,7 +198,7 @@ const Login = () => {
       nipToValidate = formData.kepsekNip;
     } else if (selectedMainRole === 'pengawas') {
       nipToValidate = formData.pengawasNip;
-    } else if (selectedMainRole === 'administrasi') {
+    } else if (selectedMainRole === 'dinas') {
       nipToValidate = formData.userNip; 
     }
 
@@ -274,7 +249,7 @@ const Login = () => {
       
       subRole: (selectedMainRole === 'guru' ? computedGuruSubRole : 
                selectedMainRole === 'kepala-sekolah' ? 'Kepala Sekolah' :
-               selectedMainRole === 'pengawas' ? 'Pengawas Sekolah' : 'Administrasi') || user.subRole,
+               selectedMainRole === 'pengawas' ? 'Pengawas Sekolah' : 'Dinas Pendidikan') || user.subRole,
                
       kepsekName: formData.kepsekName || user.kepsekName,
       kepsekNip: formData.kepsekNip || user.kepsekNip,
@@ -304,7 +279,7 @@ const Login = () => {
       case 'guru': navigate('/guru'); break;
       case 'kepala-sekolah': navigate('/kepala-sekolah'); break;
       case 'pengawas': navigate('/pengawas'); break;
-      case 'administrasi': navigate('/administrasi'); break;
+      case 'dinas': navigate('/dinas'); break;
       default: navigate('/');
     }
   };
@@ -348,22 +323,7 @@ const Login = () => {
               ))}
             </div>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="bg-white px-2 text-gray-500">Atau masuk dengan akun</span>
-              </div>
-            </div>
 
-            <button
-              onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-3 rounded-xl border border-gray-300 bg-white p-3 hover:bg-gray-50 transition"
-            >
-               <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" />
-               <span className="font-medium text-gray-700">Masuk dengan Google</span>
-            </button>
           </div>
         )}
 
@@ -641,8 +601,8 @@ const Login = () => {
               </div>
             )}
 
-            {/* --- SCENARIO: ADMINISTRASI --- */}
-            {selectedMainRole === 'administrasi' && (
+            {/* --- SCENARIO: DINAS --- */}
+            {selectedMainRole === 'dinas' && (
               <div className="space-y-4">
                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                    {/* Inputs for NIP and Name now properly rendered */}
