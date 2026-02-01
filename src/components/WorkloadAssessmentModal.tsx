@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, CheckSquare, Check, FileText } from 'lucide-react';
 import { User } from '../services/storage';
 import { MANAJERIAL_DOCS, KEWIRAUSAHAAN_DOCS, SUPERVISI_EVIDENCE_DOCS } from '../constants/documents';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 
 interface WorkloadAssessmentModalProps {
   isOpen: boolean;
@@ -39,7 +39,7 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
         workloadFeedback_v2: feedback,
         workloadFeedbackDate_v2: new Date().toISOString()
       };
-      await firebaseService.saveUser(updatedUser);
+      await supabaseService.saveUser(updatedUser);
       onSave();
       onClose();
     } catch (error) {

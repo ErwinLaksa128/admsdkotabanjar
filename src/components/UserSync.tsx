@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 import { storageService } from '../services/storage';
 
 const STORAGE_KEYS = {
@@ -9,32 +9,32 @@ const STORAGE_KEYS = {
 const UserSync = () => {
   useEffect(() => {
     // 1. Subscribe to Supabase changes (Download)
-    const unsubscribeUsers = firebaseService.subscribeUsers(async (firebaseUsers) => {
-      // Selalu sync data dari Firebase ke Local Storage sebagai "Source of Truth"
+    const unsubscribeUsers = supabaseService.subscribeUsers(async (remoteUsers) => {
+      // Selalu sync data dari Supabase ke Local Storage sebagai "Source of Truth"
       // Kita simpan meskipun kosong, agar sinkronisasi akurat (misal semua user dihapus)
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(firebaseUsers));
-      console.log('Users synced from Supabase:', firebaseUsers.length);
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(remoteUsers));
+      console.log('Users synced from Supabase:', remoteUsers.length);
       // Dispatch event agar komponen lain tahu ada update
       window.dispatchEvent(new Event('external-users-update'));
     });
 
 
 
-    // 3. Listen to local changes to push to Firebase (Upload)
+    // 3. Listen to local changes to push to Supabase (Upload)
     const handleLocalUpdate = async (e: Event) => {
       const customEvent = e as CustomEvent;
       const { type, user, nip } = customEvent.detail;
       
       try {
         if (type === 'save' && user) {
-          await firebaseService.saveUser(user);
-          console.log('Synced user to Firebase:', user.nip);
+          await supabaseService.saveUser(user);
+          console.log('Synced user to Supabase:', user.nip);
         } else if (type === 'delete' && nip) {
-          await firebaseService.deleteUser(nip);
-          console.log('Deleted user from Firebase:', nip);
+          await supabaseService.deleteUser(nip);
+          console.log('Deleted user from Supabase:', nip);
         }
       } catch (error) {
-        console.error('Failed to sync user change to Firebase:', error);
+        console.error('Failed to sync user change to Supabase:', error);
       }
     };
 
@@ -43,7 +43,7 @@ const UserSync = () => {
     const heartbeat = () => {
       const currentUser = storageService.getCurrentUser();
       if (currentUser) {
-        firebaseService.updateHeartbeat(currentUser.nip);
+        supabaseService.updateHeartbeat(currentUser.nip);
       }
     };
 

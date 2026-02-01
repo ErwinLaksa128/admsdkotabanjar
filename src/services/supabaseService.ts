@@ -279,7 +279,7 @@ export const supabaseService = {
   },
 
   // Save Generated Doc Log
-  saveGeneratedDocLog: async (log: { school: string, docType: string, fileUrl: string, generatedBy: string }) => {
+  saveGeneratedDocLog: async (log: any) => {
     const { error } = await supabase
       .from(GENERATED_DOCS_TABLE)
       .insert(log);

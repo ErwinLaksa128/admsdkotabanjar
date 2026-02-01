@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, School, BookOpen, Building2, ChevronLeft, Edit2, Shield } from 'lucide-react';
 import { storageService } from '../services/storage';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 
 const MAIN_ROLES = [
   { id: 'guru', label: 'Guru', description: 'Akses untuk Guru Kelas & Mapel', icon: <User size={24} /> },
@@ -56,7 +56,7 @@ const Login = () => {
 
   // Sync users from Firebase
   useEffect(() => {
-    const unsubscribe = firebaseService.subscribeUsers((users) => {
+    const unsubscribe = supabaseService.subscribeUsers((users) => {
       storageService.syncUsers(users);
     });
     return () => unsubscribe();

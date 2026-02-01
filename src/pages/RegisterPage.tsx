@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, School, ArrowLeft, Save } from 'lucide-react';
 import { storageService } from '../services/storage';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 import { DEFAULT_SCHOOLS } from '../services/storage';
 
 const ROLES = [
@@ -31,7 +31,7 @@ const RegisterPage = () => {
 
   // Sync users to ensure we have latest data for validation
   useEffect(() => {
-    const unsubscribe = firebaseService.subscribeUsers((users) => {
+    const unsubscribe = supabaseService.subscribeUsers((users) => {
       storageService.syncUsers(users);
     });
     return () => unsubscribe();
@@ -121,7 +121,7 @@ const RegisterPage = () => {
     try {
       // Save to Storage & Firebase
       storageService.saveUser(newUser);
-      firebaseService.saveUser(newUser);
+      supabaseService.saveUser(newUser);
 
       // Redirect to Login
       alert('Pendaftaran berhasil! Silakan login dengan NIP Anda.');

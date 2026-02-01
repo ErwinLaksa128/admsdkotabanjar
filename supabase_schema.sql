@@ -1,163 +1,120 @@
--- Enable Row Level Security (RLS) is recommended for all tables
--- But for initial migration/testing, we might keep it open or use basic authenticated policies
+-- Enable Row Level Security (RLS) is recommended, but for initial migration we might start open or with basic policies.
+-- For this setup, we will create tables.
 
--- 1. USERS Table
--- Mapped from 'users' collection
-CREATE TABLE public.users (
-    nip TEXT PRIMARY KEY,
-    email TEXT UNIQUE,
-    name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('guru', 'kepala-sekolah', 'pengawas', 'dinas', 'admin')),
-    sub_role TEXT,
-    school TEXT,
-    active BOOLEAN DEFAULT true,
-    photo TEXT, -- Base64 or URL
-    
-    -- Hierarchy / Relationships
-    kepsek_name TEXT,
-    kepsek_nip TEXT,
-    pengawas_name TEXT,
-    pengawas_nip TEXT,
-    wilayah_binaan TEXT,
-    
-    -- Pengawas Specific
-    managed_schools TEXT[], -- Array of school names
-    
-    -- Kepala Sekolah Specific
-    pangkat TEXT,
-    jabatan TEXT,
-    kecamatan TEXT,
-    
-    -- Performance / Feedback
-    workload_evidence_v2 JSONB, -- Record<string, string>
-    workload_scores_v2 JSONB,   -- Record<string, number>
-    workload_feedback_v2 TEXT,
-    workload_feedback_date_v2 TIMESTAMPTZ,
-    
-    -- System
-    last_seen TIMESTAMPTZ,
-    is_premium BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+-- 1. USERS TABLE
+CREATE TABLE IF NOT EXISTS users (
+  nip TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL, -- 'admin', 'pengawas', 'kepala-sekolah', 'guru'
+  school TEXT,
+  email TEXT,
+  phone TEXT,
+  "password" TEXT, -- If we store passwords manually (not recommended if using Supabase Auth, but needed for legacy sync)
+  "managedSchools" TEXT[], -- Array of strings
+  "workloadEvidence_v2" JSONB, -- Stores the record of evidence IDs
+  "workloadScores_v2" JSONB, -- Stores the scores
+  "lastSeen" TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable RLS for users
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-
--- Policy: Users can read their own data (or public profiles if needed)
--- For this app, it seems users need to read other users (e.g. Pengawas reads Guru list)
-CREATE POLICY "Allow authenticated read access" ON public.users FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow individual update" ON public.users FOR UPDATE TO authenticated USING (auth.uid()::text = nip); -- Warning: This assumes auth.uid() matches NIP, which might not be true if using Supabase Auth UUIDs. 
--- BETTER STRATEGY: Link Supabase Auth ID to this table via a separate column or table, OR just rely on app logic for now if not strict.
--- For now, allow full access to authenticated users for migration simplicity (Refine in production)
-CREATE POLICY "Allow full access for authenticated" ON public.users FOR ALL TO authenticated USING (true);
-
-
--- 2. SETTINGS Table
--- Mapped from 'settings' collection
-CREATE TABLE public.settings (
-    id TEXT PRIMARY KEY, -- e.g., 'running_text'
-    text TEXT,
-    value JSONB, -- Flexible column for other settings
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+-- 2. SUPERVISIONS TABLE
+CREATE TABLE IF NOT EXISTS supervisions (
+  id TEXT PRIMARY KEY,
+  "teacherNip" TEXT NOT NULL,
+  "teacherName" TEXT,
+  school TEXT NOT NULL,
+  date DATE,
+  semester TEXT,
+  year TEXT,
+  scores JSONB, -- Record<string, number>
+  notes JSONB, -- Record<string, string>
+  conclusion TEXT,
+  "followUp" TEXT,
+  "finalScore" NUMERIC,
+  type TEXT, -- 'administration', 'observation', 'planning', 'planning_deep'
+  subject TEXT,
+  topic TEXT,
+  "learningGoals" TEXT,
+  grade TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow read access" ON public.settings FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow admin update" ON public.settings FOR UPDATE TO authenticated USING (true); -- Restrict to admin role in future
-
-
--- 3. SUPERVISIONS Table
--- Mapped from 'supervisions_v3' collection
-CREATE TABLE public.supervisions (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    
-    -- Metadata
-    supervisor_nip TEXT REFERENCES public.users(nip),
-    teacher_nip TEXT REFERENCES public.users(nip),
-    school TEXT NOT NULL,
-    date TIMESTAMPTZ NOT NULL,
-    semester TEXT,
-    academic_year TEXT,
-    
-    -- Content (Storing complex nested objects as JSONB for flexibility)
-    -- This includes: sections, scores, notes, feedback
-    content JSONB NOT NULL,
-    
-    -- Summary Stats
-    total_score NUMERIC,
-    grade TEXT,
-    
-    status TEXT DEFAULT 'completed',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- 3. SCHOOL VISITS TABLE (Laporan Kunjungan Pengawas)
+CREATE TABLE IF NOT EXISTS school_visits (
+  id TEXT PRIMARY KEY,
+  "schoolName" TEXT NOT NULL,
+  "visitorNip" TEXT NOT NULL,
+  "visitorName" TEXT,
+  date DATE,
+  purpose TEXT,
+  findings TEXT,
+  recommendations TEXT,
+  status TEXT DEFAULT 'planned', -- 'planned', 'completed'
+  "createdAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.supervisions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow read access for stakeholders" ON public.supervisions FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow create for supervisors" ON public.supervisions FOR INSERT TO authenticated WITH CHECK (true);
-
-
--- 4. SCHOOL VISITS Table
--- Mapped from 'school_visits' collection
-CREATE TABLE public.school_visits (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    visitor_nip TEXT REFERENCES public.users(nip),
-    school_name TEXT NOT NULL,
-    date TIMESTAMPTZ NOT NULL,
-    
-    purpose TEXT,
-    notes TEXT,
-    photo_url TEXT,
-    location_lat NUMERIC,
-    location_lng NUMERIC,
-    location_address TEXT,
-    
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- 4. SCHOOL STATS TABLE (Aggregation)
+-- This might need to be updated via triggers or scheduled functions, 
+-- but for now we'll create the table to store the aggregated state.
+CREATE TABLE IF NOT EXISTS school_stats (
+  "schoolName" TEXT PRIMARY KEY,
+  teachers JSONB, -- Stores teacher stats object
+  "totalDocs" INTEGER DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.school_visits ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow read access visits" ON public.school_visits FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow create visits" ON public.school_visits FOR INSERT TO authenticated WITH CHECK (true);
-
-
--- 5. SCHOOL STATS Table
--- Mapped from 'school_stats' collection
-CREATE TABLE public.school_stats (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    school_name TEXT UNIQUE NOT NULL,
-    
-    guru_count INTEGER DEFAULT 0,
-    tas_count INTEGER DEFAULT 0,
-    student_count INTEGER DEFAULT 0,
-    rombel_count INTEGER DEFAULT 0,
-    
-    last_updated TIMESTAMPTZ DEFAULT NOW()
+-- 5. SETTINGS TABLE (Running Text, etc.)
+CREATE TABLE IF NOT EXISTS settings (
+  id TEXT PRIMARY KEY,
+  text TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.school_stats ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow read stats" ON public.school_stats FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow update stats" ON public.school_stats FOR ALL TO authenticated USING (true);
-
-
--- 6. GENERATED DOCS Table
--- Mapped from 'generated_docs' collection
-CREATE TABLE public.generated_docs (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    school TEXT NOT NULL,
-    doc_type TEXT NOT NULL,
-    file_url TEXT NOT NULL,
-    generated_by TEXT REFERENCES public.users(nip),
-    
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- 6. GENERATED DOCS LOG
+CREATE TABLE IF NOT EXISTS generated_docs (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  school TEXT NOT NULL,
+  "docType" TEXT NOT NULL,
+  "fileUrl" TEXT NOT NULL,
+  "generatedBy" TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.generated_docs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow read docs" ON public.generated_docs FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow create docs" ON public.generated_docs FOR INSERT TO authenticated WITH CHECK (true);
+-- ENABLE REALTIME
+-- You need to enable Realtime for these tables in the Supabase Dashboard > Database > Replication
+-- OR run:
+-- alter publication supabase_realtime add table users, supervisions, school_visits, school_stats, settings, generated_docs;
 
--- Indexes for performance
-CREATE INDEX idx_users_school ON public.users(school);
-CREATE INDEX idx_users_role ON public.users(role);
-CREATE INDEX idx_supervisions_school ON public.supervisions(school);
-CREATE INDEX idx_supervisions_teacher ON public.supervisions(teacher_nip);
-CREATE INDEX idx_visits_visitor ON public.school_visits(visitor_nip);
+-- POLICIES (Simple Public Access for now - WARNING: NOT SECURE FOR PRODUCTION)
+-- You should refine these based on RLS later.
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read access for all users" ON users FOR SELECT USING (true);
+CREATE POLICY "Enable insert for all users" ON users FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable update for all users" ON users FOR UPDATE USING (true);
+CREATE POLICY "Enable delete for all users" ON users FOR DELETE USING (true);
+
+ALTER TABLE supervisions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read access for all users" ON supervisions FOR SELECT USING (true);
+CREATE POLICY "Enable insert for all users" ON supervisions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable update for all users" ON supervisions FOR UPDATE USING (true);
+
+ALTER TABLE school_visits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read access for all users" ON school_visits FOR SELECT USING (true);
+CREATE POLICY "Enable insert for all users" ON school_visits FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable update for all users" ON school_visits FOR UPDATE USING (true);
+
+ALTER TABLE school_stats ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read access for all users" ON school_stats FOR SELECT USING (true);
+CREATE POLICY "Enable insert for all users" ON school_stats FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable update for all users" ON school_stats FOR UPDATE USING (true);
+
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read access for all users" ON settings FOR SELECT USING (true);
+CREATE POLICY "Enable insert for all users" ON settings FOR INSERT WITH CHECK (true);
+CREATE POLICY "Enable update for all users" ON settings FOR UPDATE USING (true);
+
+ALTER TABLE generated_docs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable read access for all users" ON generated_docs FOR SELECT USING (true);
+CREATE POLICY "Enable insert for all users" ON generated_docs FOR INSERT WITH CHECK (true);

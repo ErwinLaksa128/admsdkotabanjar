@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { User, storageService } from '../services/storage';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 import { MANAJERIAL_DOCS, KEWIRAUSAHAAN_DOCS, SUPERVISI_EVIDENCE_DOCS } from '../constants/documents';
 import { CheckSquare, ExternalLink, Link as LinkIcon, FileText, AlertCircle } from 'lucide-react';
 import SupervisionListModal from '../components/SupervisionListModal';
@@ -19,7 +19,7 @@ const KSWorkloadPage = () => {
       setEvidenceLinks(user.workloadEvidence_v2 || {});
       
       // Subscribe to user updates to get latest scores/feedback
-      const unsubscribe = firebaseService.subscribeUsers((users) => {
+      const unsubscribe = supabaseService.subscribeUsers((users) => {
         const found = users.find(u => u.nip === user.nip);
         if (found) {
           setCurrentUser(found);
@@ -50,7 +50,7 @@ const KSWorkloadPage = () => {
         workloadEvidence_v2: updatedEvidence
       };
 
-      await firebaseService.saveUser(updatedUser);
+      await supabaseService.saveUser(updatedUser);
       setEvidenceLinks(updatedEvidence);
       
       // Update local storage as well to keep it in sync

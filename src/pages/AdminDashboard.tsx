@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Users, LogOut, Settings, Plus, Trash2, Activity, Pencil, Crown, UploadCloud } from 'lucide-react';
 import { User, isUserOnline } from '../services/storage';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 import RunningText from '../components/RunningText';
 
 
@@ -91,7 +91,7 @@ const AdminHome = () => {
 
   useEffect(() => {
     // Subscribe to Users
-    const unsubscribeUsers = firebaseService.subscribeUsers((fetchedUsers) => {
+    const unsubscribeUsers = supabaseService.subscribeUsers((fetchedUsers) => {
       setUsers(fetchedUsers);
       
       // Calculate Online Count
@@ -115,7 +115,7 @@ const AdminHome = () => {
         <div className="font-bold mb-2">Terjadi Kesalahan Koneksi Server:</div>
         <p>{error}</p>
         <p className="text-sm mt-2 text-red-600">
-          Tips: Buka Firebase Console &gt; Authentication &gt; Sign-in method &gt; Aktifkan <strong>Anonymous</strong>.
+          Tips: Pastikan koneksi Supabase sudah dikonfigurasi dengan benar.
         </p>
       </div>
     );
@@ -181,8 +181,8 @@ const AdminUsers = () => {
       try {
 
 
-        // Subscribe langsung ke Firebase untuk data realtime dan akurat
-        unsubscribeUsers = firebaseService.subscribeUsers((serverUsers) => {
+        // Subscribe langsung ke Supabase untuk data realtime dan akurat
+        unsubscribeUsers = supabaseService.subscribeUsers((serverUsers) => {
           setUsers(serverUsers);
         });
       } catch (error) {
@@ -205,9 +205,9 @@ const AdminUsers = () => {
     e.preventDefault();
     if (!newUser.nip || !newUser.name) return;
     
-    // Simpan langsung ke Firebase
+    // Simpan langsung ke Supabase
     try {
-      await firebaseService.saveUser(newUser);
+      await supabaseService.saveUser(newUser);
       setNewUser({ nip: '', name: '', role: 'guru', active: true, isPremium: false });
       setIsAdding(false);
       setIsEditing(false);
@@ -220,7 +220,7 @@ const AdminUsers = () => {
 
   const togglePremium = async (user: User) => {
     try {
-      await firebaseService.saveUser({
+      await supabaseService.saveUser({
         ...user,
         isPremium: !user.isPremium
       });
@@ -241,7 +241,7 @@ const AdminUsers = () => {
   const handleDelete = async (nip: string) => {
     if (window.confirm('Yakin ingin menghapus user ini?')) {
       try {
-        await firebaseService.deleteUser(nip);
+        await supabaseService.deleteUser(nip);
       } catch (error) {
         alert('Gagal menghapus user dari server');
         console.error(error);
@@ -458,12 +458,9 @@ const AdminSettings = () => {
 
     const init = async () => {
       try {
-        if (!auth.currentUser) {
-          await signInAnonymously(auth);
-        }
         
         // Kita subscribe sekali saja untuk mendapatkan nilai awal
-        unsubscribe = firebaseService.subscribeRunningText((text) => {
+        unsubscribe = supabaseService.subscribeRunningText((text) => {
           // Hanya set jika state masih kosong agar tidak menimpa ketikan user
           setRunningText((prev) => prev || text);
         });
@@ -482,10 +479,10 @@ const AdminSettings = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await firebaseService.saveRunningText(runningText);
+      await supabaseService.saveRunningText(runningText);
       alert('Running text berhasil diperbarui secara ONLINE!');
     } catch (error) {
-      alert('Gagal menyimpan. Pastikan konfigurasi Firebase sudah benar.');
+      alert('Gagal menyimpan. Pastikan konfigurasi Supabase sudah benar.');
       console.error(error);
     } finally {
       setIsSaving(false);

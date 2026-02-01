@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 
 const RunningText = () => {
   const [text, setText] = useState('Memuat pengumuman...');
 
   useEffect(() => {
     // Menggunakan Realtime Listener dari Supabase
-    const unsubscribe = firebaseService.subscribeRunningText((newText) => {
+    const unsubscribe = supabaseService.subscribeRunningText((newText) => {
       setText(newText);
     });
 

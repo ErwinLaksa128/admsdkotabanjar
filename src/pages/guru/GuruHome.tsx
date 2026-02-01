@@ -5,7 +5,7 @@ import {
   X, ExternalLink, Download, Loader2, CheckCircle, ClipboardCheck, QrCode, Link as LinkIcon
 } from 'lucide-react';
 import { storageService, User, SupervisionReport } from '../../services/storage';
-import { supabaseService as firebaseService } from '../../services/supabaseService';
+import { supabaseService } from '../../services/supabaseService';
 import { studentService, Student } from '../../services/studentService';
 import { generateDocument, GasResponse, pjokFolders } from '../../services/api';
 import { googleDriveService } from '../../services/googleDrive';
@@ -176,10 +176,10 @@ const GuruHome = () => {
         storageService.addGeneratedDoc(user.nip, manualDocType, manualLink);
         setGeneratedDocs(storageService.getGeneratedDocs(user.nip));
         
-        // Log to Firebase for Principal Dashboard (Progress Tracking)
+        // Log to Supabase for Principal Dashboard (Progress Tracking)
         if (user.school) {
             try {
-                await firebaseService.saveGeneratedDocLog({
+                await supabaseService.saveGeneratedDocLog({
                     teacherNip: user.nip,
                     teacherName: user.name,
                     school: user.school,
@@ -199,7 +199,7 @@ const GuruHome = () => {
 
   useEffect(() => {
     if (user?.nip) {
-      const unsubscribe = firebaseService.subscribeAllSupervisions((reports) => {
+      const unsubscribe = supabaseService.subscribeAllSupervisions((reports) => {
         const myReports = reports.filter(r => r.teacherNip === user.nip);
         setSupervisionReports(myReports);
       });
@@ -512,9 +512,9 @@ const GuruHome = () => {
         setGeneratedDocs(storageService.getGeneratedDocs(user.nip));
       }
 
-      // Log to Firebase
+      // Log to Supabase
       if (user?.school) {
-        firebaseService.saveGeneratedDocLog({
+        supabaseService.saveGeneratedDocLog({
             teacherNip: user.nip || '',
             teacherName: user.name,
             school: user.school,
@@ -609,7 +609,7 @@ const GuruHome = () => {
 
         // Log to Firebase for Principal Dashboard
         if (user.school) {
-            firebaseService.saveGeneratedDocLog({
+            supabaseService.saveGeneratedDocLog({
                 teacherNip: user.nip,
                 teacherName: user.name,
                 school: user.school,

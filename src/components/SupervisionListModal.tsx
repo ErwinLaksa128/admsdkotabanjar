@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, FileText, Calendar, User as UserIcon, ClipboardList, BookOpen, PenTool } from 'lucide-react';
 import { SupervisionReport } from '../services/storage';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 
 interface SupervisionListModalProps {
   isOpen: boolean;
@@ -23,7 +23,7 @@ const SupervisionListModal: React.FC<SupervisionListModalProps> = ({
   useEffect(() => {
     if (isOpen && schoolName) {
       setIsLoading(true);
-      const unsubscribe = firebaseService.subscribeSupervisionsBySchool(schoolName, (fetchedReports) => {
+      const unsubscribe = supabaseService.subscribeSupervisionsBySchool(schoolName, (fetchedReports) => {
         setReports(fetchedReports);
         setIsLoading(false);
       });

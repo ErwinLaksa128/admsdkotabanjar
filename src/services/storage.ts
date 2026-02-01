@@ -530,28 +530,28 @@ export const storageService = {
     window.dispatchEvent(new CustomEvent('local-user-update', { detail: { type: 'delete', nip } }));
   },
 
-  syncUsers: (firebaseUsers: User[]) => {
+  syncUsers: (remoteUsers: User[]) => {
     const localUsers = storageService.getUsers();
-    let hasChanges = false;
-
-    firebaseUsers.forEach(fbUser => {
-      const index = localUsers.findIndex(u => u.nip === fbUser.nip);
-      if (index >= 0) {
-        // Update existing if different
-        if (JSON.stringify(localUsers[index]) !== JSON.stringify(fbUser)) {
-           localUsers[index] = fbUser;
-           hasChanges = true;
-        }
+    
+    // Merge strategy:
+    // 1. Add new users from Remote (Supabase)
+    // 2. Update existing users (prefer Remote data as truth)
+    
+    remoteUsers.forEach(remoteUser => {
+      const existingIndex = localUsers.findIndex(u => u.nip === remoteUser.nip);
+      if (existingIndex >= 0) {
+        // Update existing
+        localUsers[existingIndex] = { ...localUsers[existingIndex], ...remoteUser };
       } else {
-        localUsers.push(fbUser);
-        hasChanges = true;
+        // Add new
+        localUsers.push(remoteUser);
       }
     });
 
-    if (hasChanges) {
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(localUsers));
-      window.dispatchEvent(new CustomEvent('local-user-update', { detail: { type: 'sync', count: firebaseUsers.length } }));
-    }
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(localUsers));
+    
+    // Notify other components
+    window.dispatchEvent(new CustomEvent('local-user-update', { detail: { type: 'sync', count: remoteUsers.length } }));
   },
 
   validateNip: (nip: string): User | undefined => {

@@ -7,7 +7,7 @@ import { User, SupervisionReport, storageService, isUserOnline, SchoolVisit } fr
 import { ADMINISTRATION_OBSERVATION_INSTRUMENT, PLANNING_OBSERVATION_INSTRUMENT, PELAKSANAAN_OBSERVATION_INSTRUMENT, ADMIN_DOCS, MANAJERIAL_DOCS, KEWIRAUSAHAAN_DOCS, SUPERVISI_EVIDENCE_DOCS } from '../constants/documents';
 import RunningText from '../components/RunningText';
 import GoogleSyncWidget from '../components/GoogleSyncWidget';
-import { supabaseService as firebaseService } from '../services/supabaseService';
+import { supabaseService } from '../services/supabaseService';
 import KSWorkloadPage from './KSWorkloadPage';
 
 export const KSPlanningDeepList = () => {
@@ -29,7 +29,7 @@ export const KSPlanningDeepList = () => {
       setTeachers(localTeachers);
 
       // Subscribe to Users (Realtime)
-      const unsubscribeUsers = firebaseService.subscribeUsers((users) => {
+      const unsubscribeUsers = supabaseService.subscribeUsers((users) => {
         const schoolTeachers = users.filter((u: User) => 
             u.role === 'guru' && 
             u.active && 
@@ -39,7 +39,7 @@ export const KSPlanningDeepList = () => {
       });
 
       // Subscribe to Supervisions (Realtime)
-      const unsubscribeSups = firebaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
+      const unsubscribeSups = supabaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
         const supData: Record<string, SupervisionReport[]> = {};
         // Initialize for all known teachers to ensure empty arrays
         localTeachers.forEach(t => supData[t.nip] = []);
@@ -145,7 +145,7 @@ export const KSPelaksanaanList = () => {
       setTeachers(localTeachers);
 
       // Subscribe to Users
-      const unsubscribeUsers = firebaseService.subscribeUsers((users) => {
+      const unsubscribeUsers = supabaseService.subscribeUsers((users) => {
         const schoolTeachers = users.filter((u: User) => 
             u.role === 'guru' && 
             u.active && 
@@ -155,7 +155,7 @@ export const KSPelaksanaanList = () => {
       });
 
       // Subscribe to Supervisions
-      const unsubscribeSups = firebaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
+      const unsubscribeSups = supabaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
         const supData: Record<string, SupervisionReport[]> = {};
         // Initialize
         localTeachers.forEach(t => supData[t.nip] = []);
@@ -334,7 +334,7 @@ export const KSPelaksanaanForm = () => {
       grade
     };
     storageService.saveSupervision(report);
-    firebaseService.saveSupervision({ ...report, school: teacher.school || '' });
+    supabaseService.saveSupervision({ ...report, school: teacher.school || '' });
     alert('Observasi pelaksanaan berhasil disimpan!');
     navigate('/kepala-sekolah/pelaksanaan');
   };
@@ -694,7 +694,7 @@ export const KSReportsPage = () => {
       setTeachers(localTeachers);
 
       // Subscribe to Users
-      const unsubscribeUsers = firebaseService.subscribeUsers((users) => {
+      const unsubscribeUsers = supabaseService.subscribeUsers((users) => {
         const schoolTeachers = users.filter((u: User) => 
             u.role === 'guru' && 
             u.active && 
@@ -704,7 +704,7 @@ export const KSReportsPage = () => {
       });
 
       // Subscribe to Supervisions
-      const unsubscribeSups = firebaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
+      const unsubscribeSups = supabaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
         const supData: Record<string, SupervisionReport[]> = {};
         // Initialize
         localTeachers.forEach(t => supData[t.nip] = []);
@@ -888,7 +888,7 @@ export const KSReportForm = () => {
     };
     storageService.saveSupervision(report);
     if (teacher.school) {
-        firebaseService.saveSupervision({ ...report, school: teacher.school });
+        supabaseService.saveSupervision({ ...report, school: teacher.school });
     }
     alert('Laporan instrumen supervisi berhasil disimpan!');
     navigate('/kepala-sekolah/laporan');
@@ -1340,7 +1340,7 @@ export const KSPlanningDeepForm = () => {
     };
     
     storageService.saveSupervision(report);
-    firebaseService.saveSupervision({ ...report, school: teacher.school || '' });
+    supabaseService.saveSupervision({ ...report, school: teacher.school || '' });
     alert('Laporan Supervisi Perencanaan berhasil disimpan!');
     navigate('/kepala-sekolah/perencanaan');
   };
@@ -1706,7 +1706,7 @@ const KSDashboardHome = () => {
       );
       setTeachers(schoolTeachers);
 
-      const unsubscribeUsers = firebaseService.subscribeUsers((users) => {
+      const unsubscribeUsers = supabaseService.subscribeUsers((users) => {
         const filtered = users.filter(u => 
           u.role === 'guru' && 
           u.active && 
@@ -1715,7 +1715,7 @@ const KSDashboardHome = () => {
         setTeachers(filtered);
       });
 
-      const unsubscribeSup = firebaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
+      const unsubscribeSup = supabaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
         // Process reports to find latest scores for each teacher
         const scores: Record<string, { planning?: number, implementation?: number, administration?: number }> = {};
         
@@ -1743,7 +1743,7 @@ const KSDashboardHome = () => {
         setTeacherScores(scores);
       });
 
-      const unsubscribeStats = firebaseService.subscribeGeneratedDocsBySchool(currentUser.school, (logs) => {
+      const unsubscribeStats = supabaseService.subscribeGeneratedDocsBySchool(currentUser.school, (logs) => {
          const stats: Record<string, number> = {};
          const teacherDocs: Record<string, Set<string>> = {};
 
@@ -1772,7 +1772,7 @@ const KSDashboardHome = () => {
       );
       const schoolNameForQuery = normalizedSchool ? normalizedSchool.name : currentUser.school;
 
-      const unsubscribeVisits = firebaseService.subscribeSchoolVisits(schoolNameForQuery, (data) => {
+      const unsubscribeVisits = supabaseService.subscribeSchoolVisits(schoolNameForQuery, (data) => {
         setVisits(data);
       });
 
@@ -1927,7 +1927,7 @@ const KSVisitsPage = () => {
       );
       const schoolNameForQuery = normalizedSchool ? normalizedSchool.name : user.school;
 
-      const unsubscribe = firebaseService.subscribeSchoolVisits(schoolNameForQuery, (data) => {
+      const unsubscribe = supabaseService.subscribeSchoolVisits(schoolNameForQuery, (data) => {
         setVisits(data);
       });
       return () => unsubscribe();
@@ -2039,7 +2039,7 @@ const EvidenceUploadSection = ({
     setCurrentUser(updatedUser);
     
     // 4. Save to Firebase
-    firebaseService.saveUser(updatedUser);
+    supabaseService.saveUser(updatedUser);
     
     // 5. Reset UI state
     setIsEditing(prev => ({ ...prev, [id]: false }));
@@ -2380,7 +2380,7 @@ const KepalaSekolahDashboard = () => {
     // Subscribe to realtime updates for assessment results
     const user = storageService.getCurrentUser();
     if (user) {
-      const unsubscribe = firebaseService.subscribeUsers((users) => {
+      const unsubscribe = supabaseService.subscribeUsers((users) => {
         const found = users.find(u => u.nip === user.nip);
         if (found) {
           setCurrentUser(found);
