@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   FileText, Users, BookOpen, Plus, Edit, Trash, ArrowLeft,
-  X, ExternalLink, Download, Loader2, CheckCircle, ClipboardCheck, QrCode
+  X, ExternalLink, Download, Loader2, CheckCircle, ClipboardCheck, QrCode, Link as LinkIcon
 } from 'lucide-react';
-import { storageService, User } from '../../services/storage';
-import { firebaseService } from '../../services/firebaseService';
+import { storageService, User, SupervisionReport } from '../../services/storage';
+import { supabaseService as firebaseService } from '../../services/supabaseService';
 import { studentService, Student } from '../../services/studentService';
 import { generateDocument, GasResponse, pjokFolders } from '../../services/api';
 import { googleDriveService } from '../../services/googleDrive';
@@ -129,6 +129,84 @@ const GuruHome = () => {
   const [editingScheduleIndex, setEditingScheduleIndex] = useState<number | null>(null);
   const [newSchedule, setNewSchedule] = useState({ day: 'Senin', time: '08:00 - 09:30', subject: 'Matematika' });
 
+  // Supervision State
+  const [supervisionReports, setSupervisionReports] = useState<SupervisionReport[]>([]);
+
+  // Manual Input State (Free User)
+  const [isManualInputModalOpen, setIsManualInputModalOpen] = useState(false);
+  const [manualDocType, setManualDocType] = useState('');
+  const [manualLink, setManualLink] = useState('');
+
+  const handleOpenManualInput = (docName: string, currentUrl?: string) => {
+    setManualDocType(docName);
+    setManualLink(currentUrl || '');
+    setIsManualInputModalOpen(true);
+  };
+
+  const handlePickFromDrive = async () => {
+    try {
+      // Ensure signed in first
+      await googleDriveService.signIn();
+      
+      const file = await googleDriveService.openPicker();
+      if (file) {
+        setManualLink(file.url);
+      }
+    } catch (err: any) {
+      console.error('Picker error:', err);
+      // alert('Gagal membuka Google Picker: ' + (err.message || err));
+    }
+  };
+
+  const handleSaveManualLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (user?.nip && manualDocType) {
+        // Validation
+        if (!manualLink.startsWith('http://') && !manualLink.startsWith('https://')) {
+            alert('Link harus diawali dengan http:// atau https://');
+            return;
+        }
+        
+        if (!manualLink.includes('drive.google.com') && !manualLink.includes('docs.google.com')) {
+             alert('Link harus berupa link Google Drive atau Google Docs yang valid.');
+             return;
+        }
+
+        // Save to local storage for display
+        storageService.addGeneratedDoc(user.nip, manualDocType, manualLink);
+        setGeneratedDocs(storageService.getGeneratedDocs(user.nip));
+        
+        // Log to Firebase for Principal Dashboard (Progress Tracking)
+        if (user.school) {
+            try {
+                await firebaseService.saveGeneratedDocLog({
+                    teacherNip: user.nip,
+                    teacherName: user.name,
+                    school: user.school,
+                    docType: manualDocType,
+                    fileName: `Manual Link: ${manualLink}`
+                });
+            } catch (error) {
+                console.error('Failed to log manual input', error);
+            }
+        }
+
+        setIsManualInputModalOpen(false);
+        setManualDocType('');
+        setManualLink('');
+    }
+  };
+
+  useEffect(() => {
+    if (user?.nip) {
+      const unsubscribe = firebaseService.subscribeAllSupervisions((reports) => {
+        const myReports = reports.filter(r => r.teacherNip === user.nip);
+        setSupervisionReports(myReports);
+      });
+      return () => unsubscribe();
+    }
+  }, [user?.nip]);
+
   useEffect(() => {
     const currentUser = storageService.getCurrentUser();
     if (!currentUser) {
@@ -154,14 +232,6 @@ const GuruHome = () => {
       const savedSchedule = storageService.getSchedule(currentUser.nip);
       if (savedSchedule.length > 0) {
         setSchedule(savedSchedule);
-      } else {
-         // Default schedule for new users
-         const defaultSchedule = [
-            { day: 'Senin', time: '07:00 - 08:00', subject: 'Upacara' },
-            { day: 'Senin', time: '08:00 - 09:30', subject: 'Matematika' },
-         ];
-         setSchedule(defaultSchedule);
-         storageService.saveSchedule(currentUser.nip, defaultSchedule);
       }
     }
   }, []);
@@ -437,7 +507,7 @@ const GuruHome = () => {
       });
 
       // Update storage
-      if (user?.nip && url) {
+      if (user?.nip && generatedFiles.length > 0) {
         storageService.addGeneratedDoc(user.nip, docName, url);
         setGeneratedDocs(storageService.getGeneratedDocs(user.nip));
       }
@@ -814,6 +884,64 @@ const GuruHome = () => {
         </div>
       )}
 
+      {/* Modal Manual Input Link (Free User) */}
+      {isManualInputModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl animate-in fade-in zoom-in duration-200">
+            <h3 className="mb-4 text-lg font-bold text-gray-800">Input Link Dokumen</h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Masukkan link Google Drive / Docs untuk dokumen <strong>{manualDocType}</strong>.
+            </p>
+
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={handlePickFromDrive}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white p-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+              >
+                <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" alt="Drive" className="h-5 w-5" />
+                Pilih dari Google Drive
+              </button>
+              <div className="relative my-3 text-center text-xs text-gray-400">
+                <span className="bg-white px-2">atau paste link manual</span>
+                <div className="absolute top-1/2 left-0 -z-10 w-full border-t border-gray-200"></div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveManualLink}>
+              <div className="mb-4">
+                <label className="mb-1 block text-xs font-bold uppercase text-gray-500">Link Dokumen</label>
+                <input
+                  type="text"
+                  value={manualLink}
+                  onChange={(e) => setManualLink(e.target.value)}
+                  placeholder="https://docs.google.com/..."
+                  className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  autoFocus
+                />
+                <p className="mt-1 text-xs text-gray-400">Pastikan link dapat diakses (Public / Anyone with the link).</p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsManualInputModalOpen(false)}
+                  className="rounded px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={!manualLink.trim()}
+                  className="rounded bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:bg-orange-300"
+                >
+                  Simpan Link
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal Add Class */}
       {isClassModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -978,13 +1106,13 @@ const GuruHome = () => {
 
             <div className="flex flex-col gap-3">
                <CameraCapture onCapture={handleProfileUpdate} initialImage={user.photo} />
-               <GoogleSyncWidget />
+               <GoogleSyncWidget user={user} />
             </div>
           </div>
         </div>
 
         {/* Dashboard Stats Grid */}
-        <div className="mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={`mb-10 grid grid-cols-1 gap-6 sm:grid-cols-2 ${isClassTeacher ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
           {/* Card 1: Progres Administrasi (Moved here for better visibility) */}
           <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100">
              <div className="flex items-center justify-between mb-4">
@@ -1049,33 +1177,27 @@ const GuruHome = () => {
              </div>
           </div>
 
-          {/* Card 4: Penilaian Cepat */}
-          <div 
-            onClick={() => {
-              if (!isClassTeacher) {
+          {/* Card 4: Penilaian Cepat (Hanya untuk Guru Mata Pelajaran / Non-Wali Kelas) */}
+          {!isClassTeacher && (
+            <div 
+              onClick={() => {
                 navigate('/guru/penilaian');
-                return;
-              }
-
-              const params = new URLSearchParams();
-              const cls = effectiveTeacherClass || teacherClassToken;
-              if (cls) params.set('class', cls);
-              navigate(`/guru/penilaian?${params.toString()}`);
-            }}
-            className="group relative cursor-pointer overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100"
-          >
-             <div className="flex items-center justify-between mb-4">
-               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-100 text-green-600">
-                 <Edit size={24} />
-               </div>
-               <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">Aksi Cepat</span>
-             </div>
-             <h3 className="text-xl font-bold text-gray-800 mb-1">Input Nilai</h3>
-             <p className="text-sm text-gray-500">Formatif & Sumatif</p>
-             <div className="mt-4 text-xs font-semibold text-green-600 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
-               Buka Halaman Penilaian <ArrowLeft size={12} className="rotate-180" />
-             </div>
-          </div>
+              }}
+              className="group relative cursor-pointer overflow-hidden rounded-2xl bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-100 text-green-600">
+                  <Edit size={24} />
+                </div>
+                <span className="text-xs font-bold uppercase text-gray-400 tracking-wider">Aksi Cepat</span>
+              </div>
+              <h3 className="text-xl font-bold text-gray-800 mb-1">Input Nilai</h3>
+              <p className="text-sm text-gray-500">Formatif & Sumatif</p>
+              <div className="mt-4 text-xs font-semibold text-green-600 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+                Buka Halaman Penilaian <ArrowLeft size={12} className="rotate-180" />
+              </div>
+            </div>
+          )}
         </div>
 
         {isClassTeacher && (
@@ -1165,15 +1287,21 @@ const GuruHome = () => {
                 onClick={() => setAdminViewMode('generate')}
                 className="group relative overflow-hidden rounded-2xl bg-white p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100 md:p-8"
               >
-                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-20%] rounded-full bg-blue-50 opacity-50 transition-transform group-hover:scale-150"></div>
+                <div className={`absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-20%] rounded-full opacity-50 transition-transform group-hover:scale-150 ${user?.isPremium ? 'bg-blue-50' : 'bg-orange-50'}`}></div>
                 <div className="relative z-10">
-                  <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-600 shadow-sm transition-transform group-hover:scale-110 group-hover:rotate-3">
-                    <Plus size={32} />
+                  <div className={`mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl shadow-sm transition-transform group-hover:scale-110 group-hover:rotate-3 ${user?.isPremium ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
+                    {user?.isPremium ? <Plus size={32} /> : <LinkIcon size={32} />}
                   </div>
-                  <h4 className="mb-2 text-2xl font-bold text-gray-900 group-hover:text-blue-700">Generate Dokumen</h4>
-                  <p className="text-gray-500">Buat dokumen administrasi pembelajaran baru secara otomatis dengan template standar.</p>
-                  <div className="mt-6 flex items-center text-sm font-semibold text-blue-600">
-                    Mulai Generate <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
+                  <h4 className={`mb-2 text-2xl font-bold group-hover:${user?.isPremium ? 'text-blue-700' : 'text-orange-700'} text-gray-900`}>
+                    {user?.isPremium ? 'Generate Dokumen' : 'Input Manual'}
+                  </h4>
+                  <p className="text-gray-500">
+                    {user?.isPremium 
+                      ? 'Buat dokumen administrasi pembelajaran baru secara otomatis dengan template standar.' 
+                      : 'Masukkan link Google Drive dokumen administrasi Anda secara manual (Fitur Generate Khusus Premium).'}
+                  </p>
+                  <div className={`mt-6 flex items-center text-sm font-semibold ${user?.isPremium ? 'text-blue-600' : 'text-orange-600'}`}>
+                    {user?.isPremium ? 'Mulai Generate' : 'Mulai Input'} <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
                   </div>
                 </div>
               </button>
@@ -1230,6 +1358,13 @@ const GuruHome = () => {
                 
                 const handleClick = () => {
                   if (isGenerateMode) {
+                    // Free User Logic: Manual Input
+                    if (!user?.isPremium) {
+                        handleOpenManualInput(doc, existingDoc?.url);
+                        return;
+                    }
+
+                    // Premium User Logic: Auto Generate
                     if (doc === 'RPPM/Modul Ajar PM') {
                         setPendingDocType(doc);
                         setShowClassSelector(true);
@@ -1243,6 +1378,32 @@ const GuruHome = () => {
                   }
                 };
 
+                // Styling determination
+                let cardStyle = '';
+                let iconBg = '';
+                
+                if (isGenerateMode) {
+                    if (user?.isPremium) {
+                        // Premium Generate
+                        cardStyle = isDone 
+                            ? 'border-green-500 bg-green-50 ring-1 ring-green-200 shadow-sm hover:-translate-y-1 hover:shadow-md'
+                            : 'border-gray-200 bg-white hover:-translate-y-1 hover:border-blue-500 hover:ring-1 hover:ring-blue-200 hover:shadow-lg';
+                        iconBg = isDone ? 'bg-green-100 text-green-600' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100';
+                    } else {
+                        // Free Manual Input
+                        cardStyle = isDone
+                            ? 'border-green-200 bg-green-50/50 hover:-translate-y-1 hover:bg-green-100 hover:shadow-lg'
+                            : 'border-gray-200 bg-white hover:-translate-y-1 hover:border-orange-300 hover:shadow-lg';
+                        iconBg = isDone ? 'bg-green-100 text-green-600' : 'bg-orange-50 text-orange-500 group-hover:bg-orange-100 group-hover:text-orange-600';
+                    }
+                } else {
+                    // Result Mode
+                    cardStyle = isDone
+                        ? 'border-green-200 bg-white hover:-translate-y-1 hover:border-green-400 hover:shadow-lg cursor-pointer'
+                        : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed';
+                    iconBg = isDone ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400';
+                }
+
                 return (
                   <button
                     key={idx}
@@ -1250,25 +1411,15 @@ const GuruHome = () => {
                     disabled={isDisabled}
                     title={
                       isGenerateMode
-                        ? 'Klik untuk generate dokumen' 
-                        : (isDone ? 'Klik untuk membuka folder' : 'Belum digenerate')
+                        ? (user?.isPremium ? 'Klik untuk generate otomatis' : 'Klik untuk input link manual')
+                        : (isDone ? 'Klik untuk membuka folder' : 'Belum tersedia')
                     }
-                    className={`group relative flex flex-col items-center justify-center rounded-xl border p-6 text-center transition-all duration-300 ${
-                      isGenerateMode
-                        ? (isDone 
-                            ? 'border-green-200 bg-green-50/50 hover:-translate-y-1 hover:bg-green-100 hover:shadow-lg' // Generate mode (done)
-                            : 'border-gray-200 bg-white hover:-translate-y-1 hover:border-blue-300 hover:shadow-lg') // Generate mode (not done)
-                        : (isDone
-                            ? 'border-green-200 bg-white hover:-translate-y-1 hover:border-green-400 hover:shadow-lg cursor-pointer' // Result mode (available)
-                            : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed') // Result mode (unavailable)
-                    }`}
+                    className={`group relative flex flex-col items-center justify-center rounded-xl border p-6 text-center transition-all duration-300 ${cardStyle}`}
                   >
-                    <div className={`mb-4 rounded-full p-3 transition-colors ${
-                      isGenerateMode 
-                        ? (isDone ? 'bg-green-100 text-green-600' : 'bg-blue-50 text-blue-500 group-hover:bg-blue-100 group-hover:text-blue-600')
-                        : (isDone ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400')
-                    }`}>
-                       {isResultMode && isDone ? <ExternalLink size={24} /> : <FileText size={24} />}
+                    <div className={`mb-4 rounded-full p-3 transition-colors ${iconBg}`}>
+                       {isResultMode && isDone ? <ExternalLink size={24} /> : (
+                         !user?.isPremium && isGenerateMode ? <LinkIcon size={24} /> : <FileText size={24} />
+                       )}
                     </div>
                     
                     {isDone && (
@@ -1294,7 +1445,7 @@ const GuruHome = () => {
                           ? 'bg-green-100 text-green-700' 
                           : 'bg-gray-100 text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-600'
                       }`}>
-                        {isDone ? 'Selesai' : 'Belum Ada'}
+                        {isDone ? 'Selesai' : (user?.isPremium ? 'Generate' : 'Input Link')}
                       </span>
                     )}
                   </button>
@@ -1521,7 +1672,47 @@ const GuruHome = () => {
                   </tbody>
                 </table>
               </div>
-            </>
+              {/* Modal Manual Input Link */}
+      {isManualInputModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl animate-in fade-in zoom-in duration-200">
+            <h3 className="mb-4 text-lg font-bold text-gray-800">Input Link Dokumen</h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Masukkan link Google Drive untuk dokumen <strong>{manualDocType}</strong>.
+            </p>
+            <form onSubmit={handleSaveManualLink}>
+              <div className="mb-4">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Link Google Drive</label>
+                <input
+                  type="url"
+                  value={manualLink}
+                  onChange={(e) => setManualLink(e.target.value)}
+                  placeholder="https://drive.google.com/..."
+                  className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsManualInputModalOpen(false)}
+                  className="rounded px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Simpan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
           )}
         </div>
 
@@ -1533,11 +1724,61 @@ const GuruHome = () => {
              </div>
              <h3 className="text-2xl font-bold text-gray-800">Laporan & Supervisi</h3>
           </div>
-          <div className="rounded-xl bg-gray-50 p-6 text-center border-2 border-dashed border-gray-200">
-            <p className="text-gray-500 font-medium">
-              Rangkuman administrasi dan hasil supervisi akan muncul di sini setelah diverifikasi oleh Kepala Sekolah.
-            </p>
-          </div>
+          
+          {supervisionReports.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {supervisionReports.map((report) => (
+                <div key={report.id} className="relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+                   <div className="mb-3 flex items-center justify-between">
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${
+                        report.type === 'planning' || report.type === 'planning_deep' ? 'bg-blue-50 text-blue-700' :
+                        report.type === 'observation' ? 'bg-orange-50 text-orange-700' :
+                        'bg-teal-50 text-teal-700'
+                      }`}>
+                        {report.type === 'planning' ? 'Perencanaan' : 
+                         report.type === 'planning_deep' ? 'Perencanaan (Telaah)' :
+                         report.type === 'observation' ? 'Pelaksanaan' : 
+                         report.type === 'administration' ? 'Administrasi' : report.type}
+                      </span>
+                      <span className="text-xs text-gray-500">{new Date(report.date).toLocaleDateString('id-ID')}</span>
+                   </div>
+                   <div className="mb-4">
+                      <div className="text-sm text-gray-500">Nilai Akhir</div>
+                      <div className="flex items-end gap-2">
+                        <div className="text-3xl font-bold text-gray-800">
+                          {typeof report.finalScore === 'number' ? report.finalScore.toFixed(1) : report.finalScore}
+                        </div>
+                        <div className={`mb-1 text-sm font-semibold ${
+                           (report.finalScore >= 91) ? 'text-green-600' :
+                           (report.finalScore >= 81) ? 'text-blue-600' :
+                           (report.finalScore >= 70) ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {(report.finalScore >= 91) ? 'Sangat Baik' :
+                           (report.finalScore >= 81) ? 'Baik' :
+                           (report.finalScore >= 70) ? 'Cukup' : 'Kurang'}
+                        </div>
+                      </div>
+                   </div>
+                   
+                   {report.conclusion && (
+                     <div className="mb-3 rounded bg-gray-50 p-3 text-xs text-gray-600">
+                        <span className="font-bold">Kesimpulan:</span> {report.conclusion}
+                     </div>
+                   )}
+
+                   <div className="mt-2 flex items-center justify-between text-xs font-semibold text-gray-500">
+                      <span>Semester {report.semester} / {report.year}</span>
+                   </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl bg-gray-50 p-6 text-center border-2 border-dashed border-gray-200">
+              <p className="text-gray-500 font-medium">
+                Belum ada data supervisi dari Kepala Sekolah.
+              </p>
+            </div>
+          )}
         </div>
       </main>
     </>

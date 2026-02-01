@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, School, BookOpen, Building2, ChevronLeft, Edit2 } from 'lucide-react';
+import { User, School, BookOpen, Building2, ChevronLeft, Edit2, Shield } from 'lucide-react';
 import { storageService } from '../services/storage';
+import { supabaseService as firebaseService } from '../services/supabaseService';
 
 const MAIN_ROLES = [
-  { id: 'guru', label: 'Guru', icon: <User size={24} /> },
-  { id: 'kepala-sekolah', label: 'Kepala Sekolah', icon: <School size={24} /> },
-  { id: 'pengawas', label: 'Pengawas Sekolah', icon: <BookOpen size={24} /> },
-  { id: 'dinas', label: 'Dinas Pendidikan', icon: <Building2 size={24} /> },
+  { id: 'guru', label: 'Guru', description: 'Akses untuk Guru Kelas & Mapel', icon: <User size={24} /> },
+  { id: 'kepala-sekolah', label: 'Kepala Sekolah', description: 'Manajemen & Supervisi Sekolah', icon: <School size={24} /> },
+  { id: 'pengawas', label: 'Pengawas Sekolah', description: 'Monitoring & Evaluasi Wilayah', icon: <BookOpen size={24} /> },
+  { id: 'dinas', label: 'Dinas Pendidikan', description: 'Administrator Sistem Pusat', icon: <Building2 size={24} /> },
+  { id: 'admin', label: 'Administrator', description: 'Akses Panel Admin', icon: <Shield size={24} /> },
 ];
 
 const Login = () => {
@@ -51,19 +53,14 @@ const Login = () => {
   });
 
   const [error, setError] = useState('');
-  const [clickCount, setClickCount] = useState(0);
 
-  // Reset click count
+  // Sync users from Firebase
   useEffect(() => {
-    const timer = setTimeout(() => setClickCount(0), 2000);
-    return () => clearTimeout(timer);
-  }, [clickCount]);
-
-  const handleTitleClick = () => {
-    const newCount = clickCount + 1;
-    setClickCount(newCount);
-    if (newCount === 5) navigate('/admin');
-  };
+    const unsubscribe = firebaseService.subscribeUsers((users) => {
+      storageService.syncUsers(users);
+    });
+    return () => unsubscribe();
+  }, []);
 
 
 
@@ -106,11 +103,20 @@ const Login = () => {
       const user = storageService.validateNip(nip);
       if (user && user.role === role) {
           setIsReturningUser(true);
-          // If user has complete data (e.g. subRole or school is set), we can hide the form
-          // EXCEPTION: Guru role always shows full form with autofill
-          if (user.school && role !== 'guru') {
-            setShowFullForm(false);
-          }
+          // If user has complete data, we can hide the form
+           let isComplete = !!user.school;
+           if (role === 'guru') {
+               // specific check for guru: need subRole and class if applicable
+               if (!user.subRole) isComplete = false;
+               else if (user.subRole.includes('Kelas')) {
+                   const cls = user.subRole.split('Kelas ')[1];
+                   if (!cls || !cls.trim()) isComplete = false;
+               }
+           }
+
+           if (isComplete) {
+              setShowFullForm(false);
+           }
           
           // Autofill Name based on role
           setFormData(prev => {
@@ -138,6 +144,8 @@ const Login = () => {
               } else if (role === 'dinas') {
                   newData.userName = user.name;
                   if (user.school) newData.schoolName = user.school;
+              } else if (role === 'admin') {
+                  newData.userName = user.name;
               } else if (role === 'kepala-sekolah') {
                   newData.kepsekName = user.name;
                   if (user.school) newData.schoolName = user.school;
@@ -146,6 +154,8 @@ const Login = () => {
               } else if (role === 'pengawas') {
                   newData.pengawasName = user.name;
                   if (user.wilayahBinaan) newData.wilayahBinaan = user.wilayahBinaan;
+                  if (user.pangkat) newData.pangkat = user.pangkat;
+                  if (user.jabatan) newData.jabatan = user.jabatan;
               }
               return newData;
           });
@@ -166,7 +176,8 @@ const Login = () => {
         (selectedMainRole === 'guru' && field === 'userNip') ||
         (selectedMainRole === 'kepala-sekolah' && field === 'kepsekNip') ||
         (selectedMainRole === 'pengawas' && field === 'pengawasNip') ||
-        (selectedMainRole === 'dinas' && field === 'userNip')
+        (selectedMainRole === 'dinas' && field === 'userNip') ||
+        (selectedMainRole === 'admin' && field === 'userNip')
     ) {
         checkUserExistence(value, selectedMainRole);
     }
@@ -200,6 +211,8 @@ const Login = () => {
       nipToValidate = formData.pengawasNip;
     } else if (selectedMainRole === 'dinas') {
       nipToValidate = formData.userNip; 
+    } else if (selectedMainRole === 'admin') {
+      nipToValidate = formData.userNip;
     }
 
     if (!nipToValidate) {
@@ -249,7 +262,8 @@ const Login = () => {
       
       subRole: (selectedMainRole === 'guru' ? computedGuruSubRole : 
                selectedMainRole === 'kepala-sekolah' ? 'Kepala Sekolah' :
-               selectedMainRole === 'pengawas' ? 'Pengawas Sekolah' : 'Dinas Pendidikan') || user.subRole,
+               selectedMainRole === 'pengawas' ? 'Pengawas Sekolah' : 
+               selectedMainRole === 'admin' ? 'Administrator' : 'Dinas Pendidikan') || user.subRole,
                
       kepsekName: formData.kepsekName || user.kepsekName,
       kepsekNip: formData.kepsekNip || user.kepsekNip,
@@ -280,6 +294,7 @@ const Login = () => {
       case 'kepala-sekolah': navigate('/kepala-sekolah'); break;
       case 'pengawas': navigate('/pengawas'); break;
       case 'dinas': navigate('/dinas'); break;
+      case 'admin': navigate('/admin'); break;
       default: navigate('/');
     }
   };
@@ -290,9 +305,7 @@ const Login = () => {
         {/* Header */}
         <div className="mb-8 text-center">
           <h1 
-            onClick={handleTitleClick}
-            className="cursor-pointer text-3xl font-bold text-blue-900 transition hover:text-blue-700"
-            title="Klik 5x untuk akses Admin"
+            className="text-3xl font-bold text-blue-900"
           >
             Sistem Administrasi Guru
           </h1>
@@ -313,16 +326,31 @@ const Login = () => {
                 <button
                   key={role.id}
                   onClick={() => handleRoleSelect(role.id)}
-                  className="flex flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white p-6 transition hover:border-blue-500 hover:bg-blue-50 hover:shadow-md"
+                  className={`group relative flex flex-col items-center gap-3 rounded-xl border border-blue-100 bg-white p-6 transition-all hover:border-blue-300 hover:bg-blue-50 hover:shadow-md text-center ${role.id === 'admin' ? 'sm:col-span-2' : ''}`}
                 >
-                  <div className="rounded-full bg-blue-100 p-3 text-blue-600">
+                  <div className={`rounded-full bg-blue-100 p-3 text-blue-600 group-hover:bg-blue-200 transition-colors ${role.id === 'admin' ? 'sm:bg-blue-50' : ''}`}>
                     {role.icon}
                   </div>
-                  <span className="font-semibold text-gray-800">{role.label}</span>
+                  <div>
+                    <span className="block font-bold text-gray-800 text-lg">{role.label}</span>
+                    <span className="text-sm text-gray-500 group-hover:text-blue-600">{role.description}</span>
+                  </div>
+                  <div className={`absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity ${role.id === 'admin' ? 'sm:right-6' : ''}`}>
+                    <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+                  </div>
                 </button>
               ))}
             </div>
 
+            <div className="mt-8 text-center border-t pt-6">
+                <p className="text-gray-600 mb-2">Belum memiliki akun?</p>
+                <button 
+                    onClick={() => navigate('/register')}
+                    className="text-blue-600 font-bold hover:underline hover:text-blue-800 transition-colors"
+                >
+                    Daftar Akun Baru Disini
+                </button>
+            </div>
 
           </div>
         )}
@@ -359,156 +387,192 @@ const Login = () => {
             {/* --- SCENARIO: GURU --- */}
             {selectedMainRole === 'guru' && (
               <div className="space-y-4">
-                {/* Identity First - Always Visible */}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">NIP Guru</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.userNip}
-                      onChange={(e) => handleInputChange('userNip', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="NIP Anda"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Guru</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.userName}
-                      onChange={(e) => handleInputChange('userName', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="Nama Lengkap"
-                    />
-                  </div>
+                {/* NIP First - Always Visible */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">NIP Guru</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.userNip}
+                    onChange={(e) => handleInputChange('userNip', e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="NIP Anda"
+                  />
                 </div>
 
-                <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-4">
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Detail Sekolah & Atasan</h3>
-                    {/* Sub Role */}
+                {isReturningUser && !showFullForm ? (
+                  <div className="rounded-lg bg-blue-50 p-4 border border-blue-100 animate-in fade-in slide-in-from-top-2">
+                     <div className="flex items-center gap-3 mb-3">
+                        <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                           {formData.userName.charAt(0)}
+                        </div>
+                        <div>
+                           <h3 className="font-bold text-gray-900 text-lg">{formData.userName}</h3>
+                           <p className="text-sm text-gray-600">{formData.subRole || 'Guru'} • {formData.schoolName}</p>
+                        </div>
+                     </div>
+                     <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-100/50 p-3 rounded-lg border border-blue-100">
+                        <User size={16} />
+                        <span>Data ditemukan! Silakan klik tombol <strong>Masuk Aplikasi</strong> di bawah.</span>
+                     </div>
+                  </div>
+                ) : (
+                  <>
                     <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Pilih Peran Guru</label>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <select
-                        required
-                        value={formData.guruRoleType}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          handleInputChange('guruRoleType', next);
-                          if (next !== 'kelas') handleInputChange('guruClass', '');
-                        }}
-                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      >
-                        <option value="kelas">Guru Kelas</option>
-                        <option value="pjok">Guru PJOK</option>
-                        <option value="paibp">Guru PAIBP</option>
-                      </select>
-
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nama Guru</label>
                       <input
                         type="text"
-                        required={formData.guruRoleType === 'kelas'}
-                        disabled={formData.guruRoleType !== 'kelas'}
-                        value={formData.guruClass}
-                        onChange={(e) => handleInputChange('guruClass', e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100"
-                        placeholder="Kelas (contoh: 4 / 4A)"
+                        required
+                        value={formData.userName}
+                        onChange={(e) => handleInputChange('userName', e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                        placeholder="Nama Lengkap"
                       />
                     </div>
-                    </div>
 
-                    {/* Nama Sekolah */}
-                    <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Sekolah</label>
-                    <input
-                        type="text"
-                        required
-                        value={formData.schoolName}
-                        onChange={(e) => handleInputChange('schoolName', e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                        placeholder="Contoh: SDN 1 Banjar"
-                    />
-                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-4">
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Detail Sekolah & Atasan</h3>
+                        {/* Sub Role */}
+                        <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Pilih Peran Guru</label>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <select
+                            required
+                            value={formData.guruRoleType}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              handleInputChange('guruRoleType', next);
+                              if (next !== 'kelas') handleInputChange('guruClass', '');
+                            }}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                          >
+                            <option value="kelas">Guru Kelas</option>
+                            <option value="pjok">Guru PJOK</option>
+                            <option value="paibp">Guru PAIBP</option>
+                          </select>
 
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nama Kepala Sekolah</label>
-                        <input
-                        type="text"
-                        value={formData.kepsekName}
-                        onChange={(e) => handleInputChange('kepsekName', e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                        placeholder="Nama Kepsek"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">NIP Kepala Sekolah</label>
-                        <input
-                        type="text"
-                        value={formData.kepsekNip}
-                        onChange={(e) => handleInputChange('kepsekNip', e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                        placeholder="NIP Kepsek"
-                        />
-                    </div>
-                    </div>
+                          <input
+                            type="text"
+                            required={formData.guruRoleType === 'kelas'}
+                            disabled={formData.guruRoleType !== 'kelas'}
+                            value={formData.guruClass}
+                            onChange={(e) => handleInputChange('guruClass', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-100"
+                            placeholder="Kelas (contoh: 4 / 4A)"
+                          />
+                        </div>
+                        </div>
 
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pengawas</label>
+                        {/* Nama Sekolah */}
+                        <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nama Sekolah</label>
                         <input
-                        type="text"
-                        value={formData.pengawasName}
-                        onChange={(e) => handleInputChange('pengawasName', e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                        placeholder="Nama Pengawas"
+                            type="text"
+                            required
+                            value={formData.schoolName}
+                            onChange={(e) => handleInputChange('schoolName', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="Contoh: SDN 1 Banjar"
                         />
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Nama Kepala Sekolah</label>
+                            <input
+                            type="text"
+                            value={formData.kepsekName}
+                            onChange={(e) => handleInputChange('kepsekName', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="Nama Kepsek"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">NIP Kepala Sekolah</label>
+                            <input
+                            type="text"
+                            value={formData.kepsekNip}
+                            onChange={(e) => handleInputChange('kepsekNip', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="NIP Kepsek"
+                            />
+                        </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pengawas</label>
+                            <input
+                            type="text"
+                            value={formData.pengawasName}
+                            onChange={(e) => handleInputChange('pengawasName', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="Nama Pengawas"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">NIP Pengawas</label>
+                            <input
+                            type="text"
+                            value={formData.pengawasNip}
+                            onChange={(e) => handleInputChange('pengawasNip', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="NIP Pengawas"
+                            />
+                        </div>
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">NIP Pengawas</label>
-                        <input
-                        type="text"
-                        value={formData.pengawasNip}
-                        onChange={(e) => handleInputChange('pengawasNip', e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                        placeholder="NIP Pengawas"
-                        />
-                    </div>
-                    </div>
-                </div>
+                  </>
+                )}
               </div>
             )}
 
             {/* --- SCENARIO: KEPALA SEKOLAH --- */}
             {selectedMainRole === 'kepala-sekolah' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">NIP Kepala Sekolah</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.kepsekNip}
-                      onChange={(e) => handleInputChange('kepsekNip', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="NIP Anda"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Kepala Sekolah</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.kepsekName}
-                      onChange={(e) => handleInputChange('kepsekName', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="Nama Lengkap & Gelar"
-                    />
-                  </div>
+                {/* NIP First */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">NIP Kepala Sekolah</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.kepsekNip}
+                    onChange={(e) => handleInputChange('kepsekNip', e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="NIP Anda"
+                  />
                 </div>
 
-                {showFullForm && (
+                {isReturningUser && !showFullForm ? (
+                   <div className="rounded-lg bg-blue-50 p-4 border border-blue-100 animate-in fade-in slide-in-from-top-2">
+                      <div className="flex items-center gap-3 mb-3">
+                         <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                            {formData.kepsekName.charAt(0)}
+                         </div>
+                         <div>
+                            <h3 className="font-bold text-gray-900 text-lg">{formData.kepsekName}</h3>
+                            <p className="text-sm text-gray-600">Kepala Sekolah • {formData.schoolName}</p>
+                         </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-100/50 p-3 rounded-lg border border-blue-100">
+                         <User size={16} />
+                         <span>Data ditemukan! Silakan klik tombol <strong>Masuk Aplikasi</strong> di bawah.</span>
+                      </div>
+                   </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nama Kepala Sekolah</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.kepsekName}
+                        onChange={(e) => handleInputChange('kepsekName', e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                        placeholder="Nama Lengkap & Gelar"
+                      />
+                    </div>
+
                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-4">
                          <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Nama Sekolah</label>
@@ -597,6 +661,7 @@ const Login = () => {
                             </div>
                         </div>
                     </div>
+                  </>
                 )}
               </div>
             )}
@@ -604,9 +669,8 @@ const Login = () => {
             {/* --- SCENARIO: DINAS --- */}
             {selectedMainRole === 'dinas' && (
               <div className="space-y-4">
-                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                   {/* Inputs for NIP and Name now properly rendered */}
-                   <div>
+                 {/* NIP First */}
+                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">NIP / ID Pegawai</label>
                     <input
                       type="text"
@@ -616,76 +680,187 @@ const Login = () => {
                       className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
                       placeholder="NIP / ID"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.userName}
-                      onChange={(e) => handleInputChange('userName', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="Nama Lengkap"
-                    />
-                  </div>
-                </div>
+                 </div>
 
-                {showFullForm && (
-                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit Kerja / Sekolah</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.schoolName}
-                      onChange={(e) => handleInputChange('schoolName', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="Nama Sekolah / Unit Kerja"
-                    />
-                  </div>
-                )}
+                 {isReturningUser && !showFullForm ? (
+                    <div className="rounded-lg bg-blue-50 p-4 border border-blue-100 animate-in fade-in slide-in-from-top-2">
+                       <div className="flex items-center gap-3 mb-3">
+                          <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                             {formData.userName.charAt(0)}
+                          </div>
+                          <div>
+                             <h3 className="font-bold text-gray-900 text-lg">{formData.userName}</h3>
+                             <p className="text-sm text-gray-600">Dinas Pendidikan • {formData.schoolName}</p>
+                          </div>
+                       </div>
+                       <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-100/50 p-3 rounded-lg border border-blue-100">
+                          <User size={16} />
+                          <span>Data ditemukan! Silakan klik tombol <strong>Masuk Aplikasi</strong> di bawah.</span>
+                       </div>
+                    </div>
+                 ) : (
+                   <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.userName}
+                          onChange={(e) => handleInputChange('userName', e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                          placeholder="Nama Lengkap"
+                        />
+                      </div>
+                      
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Unit Kerja / Sekolah</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.schoolName}
+                          onChange={(e) => handleInputChange('schoolName', e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                          placeholder="Nama Sekolah / Unit Kerja"
+                        />
+                      </div>
+                   </>
+                 )}
               </div>
             )}
 
             {/* --- SCENARIO: PENGAWAS --- */}
             {selectedMainRole === 'pengawas' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">NIP Pengawas</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.pengawasNip}
-                      onChange={(e) => handleInputChange('pengawasNip', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="NIP Anda"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pengawas</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.pengawasName}
-                      onChange={(e) => handleInputChange('pengawasName', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="Nama Lengkap & Gelar"
-                    />
-                  </div>
+                {/* NIP First */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">NIP Pengawas</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.pengawasNip}
+                    onChange={(e) => handleInputChange('pengawasNip', e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="NIP Anda"
+                  />
                 </div>
 
-                {showFullForm && (
-                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Wilayah Binaan</label>
+                {isReturningUser && !showFullForm ? (
+                    <div className="rounded-lg bg-blue-50 p-4 border border-blue-100 animate-in fade-in slide-in-from-top-2">
+                       <div className="flex items-center gap-3 mb-3">
+                          <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                             {formData.pengawasName.charAt(0)}
+                          </div>
+                          <div>
+                             <h3 className="font-bold text-gray-900 text-lg">{formData.pengawasName}</h3>
+                             <p className="text-sm text-gray-600">Pengawas Sekolah • {formData.wilayahBinaan}</p>
+                          </div>
+                       </div>
+                       <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-100/50 p-3 rounded-lg border border-blue-100">
+                          <User size={16} />
+                          <span>Data ditemukan! Silakan klik tombol <strong>Masuk Aplikasi</strong> di bawah.</span>
+                       </div>
+                    </div>
+                ) : (
+                   <>
+                     <div>
+                       <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pengawas</label>
+                       <input
+                         type="text"
+                         required
+                         value={formData.pengawasName}
+                         onChange={(e) => handleInputChange('pengawasName', e.target.value)}
+                         className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                         placeholder="Nama Lengkap & Gelar"
+                       />
+                     </div>
+
+                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Pangkat/Golongan</label>
+                              <input
+                                type="text"
+                                value={formData.pangkat}
+                                onChange={(e) => handleInputChange('pangkat', e.target.value)}
+                                className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                                placeholder="Contoh: Pembina, IV/a"
+                              />
+                           </div>
+                           <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
+                              <input
+                                type="text"
+                                value={formData.jabatan}
+                                onChange={(e) => handleInputChange('jabatan', e.target.value)}
+                                className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                                placeholder="Contoh: Pengawas Sekolah Ahli Madya"
+                              />
+                           </div>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Wilayah Binaan</label>
+                          <input
+                            type="text"
+                            value={formData.wilayahBinaan}
+                            onChange={(e) => handleInputChange('wilayahBinaan', e.target.value)}
+                            className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="Contoh: Kecamatan Banjar"
+                          />
+                        </div>
+                      </div>
+                   </>
+                )}
+              </div>
+            )}
+
+            {/* --- SCENARIO: ADMIN --- */}
+            {selectedMainRole === 'admin' && (
+              <div className="space-y-4">
+                 {/* NIP First */}
+                 <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">NIP / ID Admin</label>
                     <input
                       type="text"
-                      value={formData.wilayahBinaan}
-                      onChange={(e) => handleInputChange('wilayahBinaan', e.target.value)}
+                      required
+                      value={formData.userNip}
+                      onChange={(e) => handleInputChange('userNip', e.target.value)}
                       className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="Contoh: Kecamatan Banjar"
+                      placeholder="NIP / ID"
                     />
-                  </div>
-                )}
+                 </div>
+
+                 {isReturningUser && !showFullForm ? (
+                    <div className="rounded-lg bg-blue-50 p-4 border border-blue-100 animate-in fade-in slide-in-from-top-2">
+                       <div className="flex items-center gap-3 mb-3">
+                          <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                             {formData.userName.charAt(0)}
+                          </div>
+                          <div>
+                             <h3 className="font-bold text-gray-900 text-lg">{formData.userName}</h3>
+                             <p className="text-sm text-gray-600">Administrator</p>
+                          </div>
+                       </div>
+                       <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-100/50 p-3 rounded-lg border border-blue-100">
+                          <User size={16} />
+                          <span>Data ditemukan! Silakan klik tombol <strong>Masuk Aplikasi</strong> di bawah.</span>
+                       </div>
+                    </div>
+                 ) : (
+                   <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.userName}
+                          onChange={(e) => handleInputChange('userName', e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                          placeholder="Nama Lengkap"
+                        />
+                      </div>
+                   </>
+                 )}
               </div>
             )}
 
@@ -694,12 +869,6 @@ const Login = () => {
             >
               Masuk Dashboard
             </button>
-
-            <div className="mt-6 text-center text-xs text-gray-400">
-              <p>NIP Demo:</p>
-              <p>Guru: 123456 | Kepsek: 111111</p>
-              <p>Pengawas: 222222 | Admin: 333333</p>
-            </div>
           </form>
         )}
       </div>

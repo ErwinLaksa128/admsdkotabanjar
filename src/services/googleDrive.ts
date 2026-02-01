@@ -1,6 +1,8 @@
 // KONFIGURASI GOOGLE DRIVE
 // ANDA HARUS MENGGANTI INI DENGAN CLIENT ID DAN API KEY ANDA SENDIRI
 // DARI GOOGLE CLOUD CONSOLE (https://console.cloud.google.com)
+import { STORAGE_KEYS } from './storage';
+
 export const GOOGLE_CONFIG = {
   CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID, // Masukkan Client ID Anda di sini
   API_KEY: import.meta.env.VITE_GOOGLE_API_KEY,   // Masukkan API Key Anda di sini
@@ -111,8 +113,39 @@ export const googleDriveService = {
     }
   },
 
+  // Get local data for backup
+  getLocalData: () => {
+    const data: Record<string, any> = {};
+    Object.values(STORAGE_KEYS).forEach(key => {
+      const val = localStorage.getItem(key);
+      if (val) {
+        try {
+          data[key] = JSON.parse(val);
+        } catch {
+          data[key] = val;
+        }
+      }
+    });
+    return data;
+  },
+
+  // Restore data from backup
+  restoreData: (data: any) => {
+    if (!data) return;
+    Object.keys(data).forEach(key => {
+      const val = data[key];
+      if (typeof val === 'object') {
+        localStorage.setItem(key, JSON.stringify(val));
+      } else {
+        localStorage.setItem(key, String(val));
+      }
+    });
+    // Reload to apply changes
+    window.location.reload();
+  },
+
   // Find backup file
-  findBackupFile: async () => {
+  findBackupFile: async (filename: string = BACKUP_FILENAME) => {
     try {
       // Pastikan client drive sudah terload
       if (!window.gapi.client) {
@@ -133,7 +166,7 @@ export const googleDriveService = {
       }
 
       const response = await window.gapi.client.drive.files.list({
-        q: `name = '${BACKUP_FILENAME}' and trashed = false`,
+        q: `name = '${filename}' and trashed = false`,
         fields: 'files(id, name)',
       });
       
@@ -151,16 +184,16 @@ export const googleDriveService = {
   },
 
   // Upload data (Create or Update)
-  uploadBackup: async (data: any) => {
+  uploadBackup: async (data: any, filename: string = BACKUP_FILENAME) => {
     const fileContent = JSON.stringify(data);
     const file = new Blob([fileContent], { type: 'application/json' });
     const metadata = {
-      name: BACKUP_FILENAME,
+      name: filename,
       mimeType: 'application/json',
     };
 
     try {
-      const existingFile = await googleDriveService.findBackupFile();
+      const existingFile = await googleDriveService.findBackupFile(filename);
 
       const accessToken = window.gapi.client.getToken().access_token;
       
@@ -168,7 +201,7 @@ export const googleDriveService = {
         // Update
         const url = `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`;
         const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify({ name: BACKUP_FILENAME })], { type: 'application/json' }));
+        form.append('metadata', new Blob([JSON.stringify({ name: filename })], { type: 'application/json' }));
         form.append('file', file);
 
         await fetch(url, {
@@ -199,12 +232,12 @@ export const googleDriveService = {
         const url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
         
         const response = await fetch(url, {
-          method: 'POST',
-          headers: new Headers({
-            'Authorization': 'Bearer ' + accessToken,
-            'Content-Type': 'multipart/related; boundary=' + boundary
-          }),
-          body: multipartRequestBody,
+            method: 'POST',
+            headers: new Headers({
+                'Authorization': 'Bearer ' + accessToken,
+                'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+            }),
+            body: multipartRequestBody
         });
 
         if (!response.ok) {
@@ -226,9 +259,9 @@ export const googleDriveService = {
   },
 
   // Download data
-  downloadBackup: async () => {
+  downloadBackup: async (filename: string = BACKUP_FILENAME) => {
     try {
-      const existingFile = await googleDriveService.findBackupFile();
+      const existingFile = await googleDriveService.findBackupFile(filename);
       if (!existingFile) return null;
 
       const response = await window.gapi.client.drive.files.get({
@@ -272,6 +305,7 @@ export const googleDriveService = {
     return await res.json();
   },
 
+  // Create Folder
   createFolder: async (folderName: string, parentId?: string) => {
     if (!window.gapi || !window.gapi.client) {
       throw new Error('Google API client not initialized');
@@ -298,6 +332,54 @@ export const googleDriveService = {
 
     if (!response.ok) throw new Error('Failed to create folder');
     return await response.json();
+  },
+
+  // Google Picker
+  openPicker: async () => {
+    return new Promise<{ id: string; name: string; url: string; iconUrl: string } | null>((resolve, reject) => {
+      const loadPicker = () => {
+        if (!window.google || !window.google.picker) {
+           reject(new Error('Google Picker API failed to load'));
+           return;
+        }
+
+        const token = window.gapi.client.getToken()?.access_token;
+        if (!token) {
+           reject(new Error('Please sign in to Google Drive first'));
+           return;
+        }
+
+        try {
+            const picker = new window.google.picker.PickerBuilder()
+                .addView(window.google.picker.ViewId.DOCS)
+                .setOAuthToken(token)
+                .setDeveloperKey(GOOGLE_CONFIG.API_KEY)
+                .setCallback((data: any) => {
+                    if (data[window.google.picker.Response.ACTION] === window.google.picker.Action.PICKED) {
+                        const doc = data[window.google.picker.Response.DOCUMENTS][0];
+                        resolve({
+                            id: doc[window.google.picker.Document.ID],
+                            name: doc[window.google.picker.Document.NAME],
+                            url: doc[window.google.picker.Document.URL],
+                            iconUrl: doc[window.google.picker.Document.ICON_URL]
+                        });
+                    } else if (data[window.google.picker.Response.ACTION] === window.google.picker.Action.CANCEL) {
+                        resolve(null);
+                    }
+                })
+                .build();
+            picker.setVisible(true);
+        } catch (e) {
+            reject(e);
+        }
+      };
+
+      if (!window.google || !window.google.picker) {
+        window.gapi.load('picker', loadPicker);
+      } else {
+        loadPicker();
+      }
+    });
   },
 
   uploadFile: async (fileBlob: Blob, filename: string, mimeType: string, parentId?: string) => {
@@ -334,35 +416,5 @@ export const googleDriveService = {
     }
     
     return await response.json();
-  },
-
-  // Helper to get all local data
-  getLocalData: () => {
-    const data: Record<string, any> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.startsWith('app_') || key === 'currentUser')) {
-        const val = localStorage.getItem(key);
-        try {
-          data[key] = val ? JSON.parse(val) : null;
-        } catch {
-          data[key] = val;
-        }
-      }
-    }
-    return data;
-  },
-
-  // Helper to restore data
-  restoreData: (data: Record<string, any>) => {
-    Object.keys(data).forEach(key => {
-      const val = data[key];
-      if (typeof val === 'object') {
-        localStorage.setItem(key, JSON.stringify(val));
-      } else {
-        localStorage.setItem(key, val);
-      }
-    });
-    window.location.reload(); // Reload to apply changes
   }
 };

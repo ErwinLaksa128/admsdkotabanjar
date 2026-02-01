@@ -6,7 +6,7 @@ export interface Student {
   gender: 'L' | 'P';
 }
 
-const STORAGE_KEY_STUDENTS = 'app_students';
+const STORAGE_KEY_STUDENTS = 'app_students_v2';
 
 const DEFAULT_STUDENTS: Student[] = [];
 

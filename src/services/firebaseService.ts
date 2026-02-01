@@ -6,10 +6,10 @@ import { User, SupervisionReport, SchoolVisit } from './storage';
 const SETTINGS_COLLECTION = 'settings';
 const RUNNING_TEXT_DOC = 'running_text';
 const USERS_COLLECTION = 'users';
-const SUPERVISIONS_COLLECTION = 'supervisions';
-const GENERATED_DOCS_COLLECTION = 'generated_docs';
-const SCHOOL_STATS_COLLECTION = 'school_stats';
-const SCHOOL_VISITS_COLLECTION = 'school_visits';
+const SUPERVISIONS_COLLECTION = 'supervisions_v3';
+const GENERATED_DOCS_COLLECTION = 'generated_docs_v3';
+const SCHOOL_STATS_COLLECTION = 'school_stats_v3';
+const SCHOOL_VISITS_COLLECTION = 'school_visits_v3';
 
 export const firebaseService = {
   // Login with Google
@@ -222,16 +222,17 @@ export const firebaseService = {
 
            // 3. Increment School Stats (Aggregation)
            if (log.school) {
-             const schoolId = log.school.replace(/\s+/g, '_').toLowerCase(); // simple slug
+             const schoolId = log.school.trim().replace(/\s+/g, '_').toLowerCase(); // simple slug
+             const safeNip = log.teacherNip.replace(/[^a-zA-Z0-9]/g, '_');
              const statsRef = doc(db, SCHOOL_STATS_COLLECTION, schoolId);
              
              transaction.set(statsRef, {
                schoolName: log.school,
                totalDocs: increment(1),
                lastActivity: new Date().toISOString(),
-               [`teachers.${log.teacherNip}.name`]: log.teacherName,
-               [`teachers.${log.teacherNip}.docs`]: increment(1),
-               [`teachers.${log.teacherNip}.lastDoc`]: log.docType
+               [`teachers.${safeNip}.name`]: log.teacherName,
+               [`teachers.${safeNip}.docs`]: increment(1),
+               [`teachers.${safeNip}.lastDoc`]: log.docType
              }, { merge: true });
            }
         } else {
@@ -266,7 +267,7 @@ export const firebaseService = {
     const colRef = collection(db, SCHOOL_STATS_COLLECTION);
     return onSnapshot(colRef, (snapshot) => {
       const stats: any[] = [];
-      snapshot.forEach(doc => stats.push(doc.data()));
+      snapshot.forEach(doc => stats.push({ id: doc.id, ...doc.data() }));
       callback(stats);
     }, (error) => {
        console.error("Error fetching school stats:", error);
@@ -295,6 +296,19 @@ export const firebaseService = {
         visits.push(doc.data() as SchoolVisit);
       });
       // Client-side sort to avoid index requirement
+      visits.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      callback(visits);
+    });
+  },
+
+  // Subscribe to Visits by Visitor (Pengawas)
+  subscribeVisitsByVisitor: (visitorNip: string, callback: (visits: SchoolVisit[]) => void) => {
+    const q = query(collection(db, SCHOOL_VISITS_COLLECTION), where("visitorNip", "==", visitorNip));
+    return onSnapshot(q, (snapshot) => {
+      const visits: SchoolVisit[] = [];
+      snapshot.forEach((doc) => {
+        visits.push(doc.data() as SchoolVisit);
+      });
       visits.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       callback(visits);
     });

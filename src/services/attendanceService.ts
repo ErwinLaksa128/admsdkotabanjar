@@ -13,7 +13,7 @@ export interface AttendanceRecord {
   }[];
 }
 
-const STORAGE_KEY_ATTENDANCE = 'app_attendance';
+const STORAGE_KEY_ATTENDANCE = 'app_attendance_v2';
 
 export const attendanceService = {
   getAll: (): AttendanceRecord[] => {

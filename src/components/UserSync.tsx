@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
-import { firebaseService } from '../services/firebaseService';
+import { supabaseService as firebaseService } from '../services/supabaseService';
 import { storageService } from '../services/storage';
-import { auth } from '../lib/firebase';
-import { signInAnonymously } from 'firebase/auth';
 
 const STORAGE_KEYS = {
   USERS: 'app_users',
@@ -10,55 +8,17 @@ const STORAGE_KEYS = {
 
 const UserSync = () => {
   useEffect(() => {
-    let unsubscribeUsers: (() => void) | undefined;
+    // 1. Subscribe to Supabase changes (Download)
+    const unsubscribeUsers = firebaseService.subscribeUsers(async (firebaseUsers) => {
+      // Selalu sync data dari Firebase ke Local Storage sebagai "Source of Truth"
+      // Kita simpan meskipun kosong, agar sinkronisasi akurat (misal semua user dihapus)
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(firebaseUsers));
+      console.log('Users synced from Supabase:', firebaseUsers.length);
+      // Dispatch event agar komponen lain tahu ada update
+      window.dispatchEvent(new Event('external-users-update'));
+    });
 
-    const initSync = async () => {
-      try {
-        if (!auth.currentUser) {
-          await signInAnonymously(auth);
-        }
 
-        // 1. Subscribe to Firebase changes (Download)
-        unsubscribeUsers = firebaseService.subscribeUsers(async (firebaseUsers) => {
-          // Selalu sync data dari Firebase ke Local Storage sebagai "Source of Truth"
-          // Kita simpan meskipun kosong, agar sinkronisasi akurat (misal semua user dihapus)
-          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(firebaseUsers));
-          console.log('Users synced from Firebase:', firebaseUsers.length);
-          // Dispatch event agar komponen lain tahu ada update
-          window.dispatchEvent(new Event('external-users-update'));
-
-          // 2. Cek apakah Default Users sudah ada di Firebase
-          // BAGIAN INI DINONAKTIFKAN agar Admin bisa menghapus data demo
-          /*
-          if (!isCheckingDefaults.current) {
-            isCheckingDefaults.current = true;
-            
-            const missingDefaults = DEFAULT_USERS.filter(defUser => 
-              !firebaseUsers.some(fbUser => fbUser.nip === defUser.nip)
-            );
-
-            if (missingDefaults.length > 0) {
-              console.log(`Found ${missingDefaults.length} missing default users. Uploading to Firebase...`);
-              try {
-                for (const user of missingDefaults) {
-                  await firebaseService.saveUser(user);
-                  console.log(`Uploaded default user: ${user.name} (${user.nip})`);
-                }
-              } catch (error) {
-                console.error('Error uploading default users:', error);
-              }
-            }
-            
-            isCheckingDefaults.current = false;
-          }
-          */
-        });
-      } catch (error) {
-        console.error('Error initializing UserSync:', error);
-      }
-    };
-
-    initSync();
 
     // 3. Listen to local changes to push to Firebase (Upload)
     const handleLocalUpdate = async (e: Event) => {

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { ArrowLeft, FileText, File as FileIcon, Save, Calendar } from 'lucide-react';
+import { ArrowLeft, FileText, File as FileIcon, Save, Calendar, ExternalLink, CheckSquare } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { User, SupervisionReport, storageService, isUserOnline, SchoolVisit } from '../services/storage';
 import { ADMINISTRATION_OBSERVATION_INSTRUMENT, PLANNING_OBSERVATION_INSTRUMENT, PELAKSANAAN_OBSERVATION_INSTRUMENT, ADMIN_DOCS, MANAJERIAL_DOCS, KEWIRAUSAHAAN_DOCS, SUPERVISI_EVIDENCE_DOCS } from '../constants/documents';
 import RunningText from '../components/RunningText';
-import { firebaseService } from '../services/firebaseService';
+import GoogleSyncWidget from '../components/GoogleSyncWidget';
+import { supabaseService as firebaseService } from '../services/supabaseService';
+import KSWorkloadPage from './KSWorkloadPage';
 
 export const KSPlanningDeepList = () => {
   const navigate = useNavigate();
@@ -1689,7 +1691,7 @@ export const KSPlanningDeepForm = () => {
 
 const KSDashboardHome = () => {
   const [teachers, setTeachers] = useState<User[]>([]);
-  const [latestReports, setLatestReports] = useState<SupervisionReport[]>([]);
+  const [teacherScores, setTeacherScores] = useState<Record<string, { planning?: number, implementation?: number, administration?: number }>>({});
   const [generatedStats, setGeneratedStats] = useState<Record<string, number>>({});
   const [visits, setVisits] = useState<SchoolVisit[]>([]);
 
@@ -1700,7 +1702,7 @@ const KSDashboardHome = () => {
       const schoolTeachers = allUsers.filter(u => 
         u.role === 'guru' && 
         u.active && 
-        u.school?.toLowerCase() === currentUser.school?.toLowerCase()
+        u.school?.trim().toLowerCase() === currentUser.school?.trim().toLowerCase()
       );
       setTeachers(schoolTeachers);
 
@@ -1708,29 +1710,69 @@ const KSDashboardHome = () => {
         const filtered = users.filter(u => 
           u.role === 'guru' && 
           u.active && 
-          u.school?.toLowerCase() === currentUser.school?.toLowerCase()
+          u.school?.trim().toLowerCase() === currentUser.school?.trim().toLowerCase()
         );
         setTeachers(filtered);
       });
 
       const unsubscribeSup = firebaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
-        setLatestReports(reports.slice(0, 5));
-      });
-
-      const unsubscribeStats = firebaseService.subscribeSchoolStats((allStats) => {
-        const mySchoolId = currentUser.school?.replace(/\s+/g, '_').toLowerCase();
-        const mySchoolStats = allStats.find(s => s.schoolName === currentUser.school || s.id === mySchoolId);
+        // Process reports to find latest scores for each teacher
+        const scores: Record<string, { planning?: number, implementation?: number, administration?: number }> = {};
         
-        if (mySchoolStats && mySchoolStats.teachers) {
-             const stats: Record<string, number> = {};
-             Object.keys(mySchoolStats.teachers).forEach(nip => {
-                 stats[nip] = mySchoolStats.teachers[nip].docs || 0;
-             });
-             setGeneratedStats(stats);
-        }
+        // Reports are already sorted by date desc from the service
+        reports.forEach(r => {
+            if (!scores[r.teacherNip]) {
+                scores[r.teacherNip] = {};
+            }
+            
+            // Perencanaan (Planning)
+            if ((r.type === 'planning' || r.type === 'planning_deep') && scores[r.teacherNip].planning === undefined) {
+                scores[r.teacherNip].planning = r.finalScore;
+            }
+            
+            // Pelaksanaan (Observation)
+            if (r.type === 'observation' && scores[r.teacherNip].implementation === undefined) {
+                scores[r.teacherNip].implementation = r.finalScore;
+            }
+            
+            // Laporan Supervisi (Administration)
+            if (r.type === 'administration' && scores[r.teacherNip].administration === undefined) {
+                scores[r.teacherNip].administration = r.finalScore;
+            }
+        });
+        setTeacherScores(scores);
       });
 
-      const unsubscribeVisits = firebaseService.subscribeSchoolVisits(currentUser.school, (data) => {
+      const unsubscribeStats = firebaseService.subscribeGeneratedDocsBySchool(currentUser.school, (logs) => {
+         const stats: Record<string, number> = {};
+         const teacherDocs: Record<string, Set<string>> = {};
+
+         // Group by teacher and count unique docTypes
+         logs.forEach(log => {
+             if (log.teacherNip && log.docType) {
+                 if (!teacherDocs[log.teacherNip]) {
+                     teacherDocs[log.teacherNip] = new Set();
+                 }
+                 teacherDocs[log.teacherNip].add(log.docType);
+             }
+         });
+
+         // Convert sets to counts
+         Object.keys(teacherDocs).forEach(nip => {
+             stats[nip] = teacherDocs[nip].size;
+         });
+
+         setGeneratedStats(stats);
+      });
+
+      // Normalize school name for subscription to ensure matches with Pengawas input
+      const allSchools = storageService.getSchools();
+      const normalizedSchool = allSchools.find(s => 
+          s.name.toLowerCase().trim() === currentUser.school?.toLowerCase().trim()
+      );
+      const schoolNameForQuery = normalizedSchool ? normalizedSchool.name : currentUser.school;
+
+      const unsubscribeVisits = firebaseService.subscribeSchoolVisits(schoolNameForQuery, (data) => {
         setVisits(data);
       });
 
@@ -1746,14 +1788,21 @@ const KSDashboardHome = () => {
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h3 className="mb-3 font-semibold">Kunjungan Pengawas</h3>
+        <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Kunjungan Pengawas</h3>
+            {visits.length > 0 && (
+                <Link to="/kepala-sekolah/kunjungan" className="text-xs text-blue-600 hover:underline">
+                    Lihat Semua
+                </Link>
+            )}
+        </div>
         <div className="grid gap-4">
             {visits.length === 0 ? (
                 <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300">
                     Belum ada data kunjungan pengawas.
                 </div>
             ) : (
-                visits.map(visit => (
+                visits.slice(0, 3).map(visit => (
                     <div key={visit.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                         <div className="flex justify-between items-start mb-2">
                             <div>
@@ -1798,6 +1847,21 @@ const KSDashboardHome = () => {
             const count = generatedStats[t.nip] || 0;
             const total = ADMIN_DOCS.length;
             const percentage = Math.min(Math.round((count / total) * 100), 100);
+            
+            const scores = teacherScores[t.nip] || {};
+            const formatScore = (val?: number) => val !== undefined ? val.toFixed(1) : '-';
+            
+            const getScoreDetails = (val?: number) => {
+                if (val === undefined) return { label: '', color: 'text-gray-400' };
+                if (val > 90) return { label: 'Sangat Baik', color: 'text-green-600' };
+                if (val > 75) return { label: 'Baik', color: 'text-blue-600' };
+                if (val > 60) return { label: 'Cukup', color: 'text-yellow-600' };
+                return { label: 'Perlu Pembinaan', color: 'text-red-600' };
+            };
+
+            const planningDetails = getScoreDetails(scores.planning);
+            const implementationDetails = getScoreDetails(scores.implementation);
+            const administrationDetails = getScoreDetails(scores.administration);
 
             return (
             <div key={t.nip} className="flex flex-col gap-2 rounded-lg border border-gray-100 p-3">
@@ -1813,9 +1877,28 @@ const KSDashboardHome = () => {
               <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
                 <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
               </div>
-              <div className="flex justify-between text-xs text-gray-500">
+              <div className="flex justify-between text-xs text-gray-500 mb-2">
                 <span>Progress Administrasi</span>
                 <span>{count}/{total} ({percentage}%)</span>
+              </div>
+              
+              {/* Supervision Scores */}
+              <div className="grid grid-cols-3 gap-2 border-t border-gray-100 pt-2 mt-1">
+                  <div className="text-center">
+                      <div className="text-[10px] text-gray-500 uppercase">Perencanaan</div>
+                      <div className={`text-sm font-bold ${planningDetails.color}`}>{formatScore(scores.planning)}</div>
+                      {planningDetails.label && <div className={`text-[9px] font-medium ${planningDetails.color}`}>{planningDetails.label}</div>}
+                  </div>
+                  <div className="text-center border-l border-gray-100">
+                      <div className="text-[10px] text-gray-500 uppercase">Pelaksanaan</div>
+                      <div className={`text-sm font-bold ${implementationDetails.color}`}>{formatScore(scores.implementation)}</div>
+                      {implementationDetails.label && <div className={`text-[9px] font-medium ${implementationDetails.color}`}>{implementationDetails.label}</div>}
+                  </div>
+                  <div className="text-center border-l border-gray-100">
+                      <div className="text-[10px] text-gray-500 uppercase">Laporan</div>
+                      <div className={`text-sm font-bold ${administrationDetails.color}`}>{formatScore(scores.administration)}</div>
+                      {administrationDetails.label && <div className={`text-[9px] font-medium ${administrationDetails.color}`}>{administrationDetails.label}</div>}
+                  </div>
               </div>
             </div>
           )})}
@@ -1826,26 +1909,7 @@ const KSDashboardHome = () => {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <h3 className="mb-2 font-semibold">Laporan Terbaru</h3>
-          {latestReports.length === 0 ? (
-            <div className="text-sm text-gray-500">Belum ada laporan supervisi.</div>
-          ) : (
-            <div className="grid gap-2">
-              {latestReports.map((r) => (
-                <div key={r.id} className="flex items-center justify-between rounded-lg border border-gray-100 p-2">
-                  <div className="text-sm">
-                    <div className="font-medium">{r.teacherName}</div>
-                    <div className="text-xs text-gray-500">{r.date} • {r.type}</div>
-                  </div>
-                  <span className="text-xs rounded bg-indigo-100 px-2 py-1 text-indigo-700">{r.finalScore.toFixed(1)}%</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+
     </div>
   );
 };
@@ -1856,7 +1920,14 @@ const KSVisitsPage = () => {
   useEffect(() => {
     const user = storageService.getCurrentUser();
     if (user?.school) {
-      const unsubscribe = firebaseService.subscribeSchoolVisits(user.school, (data) => {
+      // Normalize school name for subscription
+      const allSchools = storageService.getSchools();
+      const normalizedSchool = allSchools.find(s => 
+          s.name.toLowerCase().trim() === user.school?.toLowerCase().trim()
+      );
+      const schoolNameForQuery = normalizedSchool ? normalizedSchool.name : user.school;
+
+      const unsubscribe = firebaseService.subscribeSchoolVisits(schoolNameForQuery, (data) => {
         setVisits(data);
       });
       return () => unsubscribe();
@@ -1931,8 +2002,8 @@ const EvidenceUploadSection = ({
     const user = storageService.getCurrentUser();
     if (user) {
       setCurrentUser(user);
-      if (user.workloadEvidence) {
-        setEvidence(user.workloadEvidence);
+      if (user.workloadEvidence_v2) {
+        setEvidence(user.workloadEvidence_v2);
       }
     }
   }, []);
@@ -1953,10 +2024,10 @@ const EvidenceUploadSection = ({
     
     // Update User object
     // We merge with existing evidence in storage to avoid overwriting updates from other sections
-    const existingEvidence = user.workloadEvidence || {};
+    const existingEvidence = user.workloadEvidence_v2 || {};
     const finalEvidence = { ...existingEvidence, [id]: url };
     
-    const updatedUser = { ...user, workloadEvidence: finalEvidence };
+    const updatedUser = { ...user, workloadEvidence_v2: finalEvidence };
     
     // 1. Save to LocalStorage
     storageService.saveUser(updatedUser);
@@ -2030,6 +2101,20 @@ const EvidenceUploadSection = ({
                                 }
                             }}
                         />
+                        <button 
+                            onClick={() => {
+                                if (inputValue && (inputValue.startsWith('http://') || inputValue.startsWith('https://'))) {
+                                    window.open(inputValue, '_blank');
+                                } else {
+                                    alert('Link tidak valid! Pastikan diawali dengan http:// atau https://');
+                                }
+                            }}
+                            className="bg-yellow-500 text-white px-3 py-2 rounded text-sm hover:bg-yellow-600 flex items-center gap-1"
+                            title="Cek Link (Buka di tab baru)"
+                        >
+                            <ExternalLink size={16} />
+                            Cek
+                        </button>
                         <button 
                             onClick={() => handleSave(item.id)}
                             className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700"
@@ -2165,18 +2250,18 @@ const WorkloadCompletionStatus = ({ user }: { user: User | null }) => {
             ];
             
             // Progress Calculation
-            const filledCount = allIds.filter(id => user.workloadEvidence?.[id]).length;
+            const filledCount = allIds.filter(id => user.workloadEvidence_v2?.[id]).length;
             const newProgress = Math.round((filledCount / totalItems) * 100);
             setProgress(newProgress);
             setIsComplete(filledCount === totalItems);
 
             // Score Calculation
-            if (user.workloadScores) {
+            if (user.workloadScores_v2) {
                 let totalScore = 0;
                 let scoredCount = 0;
                 
                 // Sum all scores found
-                Object.values(user.workloadScores).forEach(score => {
+                Object.values(user.workloadScores_v2).forEach(score => {
                     totalScore += score;
                     scoredCount++;
                 });
@@ -2227,28 +2312,52 @@ const WorkloadCompletionStatus = ({ user }: { user: User | null }) => {
             {/* Assessment Section */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                 <h3 className="font-bold text-gray-800 mb-4 border-b pb-2">Hasil Penilaian Pengawas</h3>
-                {hasScores ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-100">
-                            <p className="text-gray-500 text-sm mb-1">Nilai Rata-rata</p>
-                            <div className="text-4xl font-bold text-indigo-600">{averageScore.toFixed(1)}</div>
-                            <p className="text-xs text-gray-400 mt-1">Skor Total / 18 Dokumen</p>
-                        </div>
-                        <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-100">
-                            <p className="text-gray-500 text-sm mb-1">Kategori</p>
-                            <div className={`text-2xl font-bold ${
-                                category === 'Sangat Baik' ? 'text-green-600' :
-                                category === 'Baik' ? 'text-blue-600' :
-                                category === 'Cukup' ? 'text-yellow-600' : 'text-red-600'
-                            }`}>
-                                {category}
-                            </div>
-                            <p className="text-xs text-gray-400 mt-1">Predikat Kinerja</p>
-                        </div>
+                
+                {!hasScores && !user?.workloadFeedback_v2 ? (
+                     <div className="text-center py-6 text-gray-500 italic bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                        Belum ada penilaian dari pengawas sekolah.
                     </div>
                 ) : (
-                    <div className="text-center py-6 text-gray-500 italic bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                        Belum ada penilaian dari pengawas sekolah.
+                    <div className="space-y-6">
+                        {hasScores && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                    <p className="text-gray-500 text-sm mb-1">Nilai Rata-rata</p>
+                                    <div className="text-4xl font-bold text-indigo-600">{averageScore.toFixed(1)}</div>
+                                    <p className="text-xs text-gray-400 mt-1">Skor Total / 18 Dokumen</p>
+                                </div>
+                                <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                    <p className="text-gray-500 text-sm mb-1">Kategori</p>
+                                    <div className={`text-2xl font-bold ${
+                                        category === 'Sangat Baik' ? 'text-green-600' :
+                                        category === 'Baik' ? 'text-blue-600' :
+                                        category === 'Cukup' ? 'text-yellow-600' : 'text-red-600'
+                                    }`}>
+                                        {category}
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">Predikat Kinerja</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {user?.workloadFeedback_v2 && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <h4 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                                    <FileText size={16} className="text-indigo-600" />
+                                    Catatan & Umpan Balik Pengawas
+                                </h4>
+                                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4 text-gray-700 relative">
+                                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 rounded-l-lg"></div>
+                                    <p className="pl-2 whitespace-pre-wrap">{user?.workloadFeedback_v2}</p>
+                                </div>
+                                {user?.workloadFeedbackDate_v2 && (
+                                    <p className="text-right text-xs text-gray-500 mt-2 flex items-center justify-end gap-1">
+                                        <Calendar size={12} />
+                                        Dinilai pada: {new Date(user?.workloadFeedbackDate_v2).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -2267,6 +2376,20 @@ const KepalaSekolahDashboard = () => {
 
   useEffect(() => {
     refreshUser();
+
+    // Subscribe to realtime updates for assessment results
+    const user = storageService.getCurrentUser();
+    if (user) {
+      const unsubscribe = firebaseService.subscribeUsers((users) => {
+        const found = users.find(u => u.nip === user.nip);
+        if (found) {
+          setCurrentUser(found);
+          // Sync to local storage so refresh keeps data
+          storageService.saveUser(found);
+        }
+      });
+      return () => unsubscribe();
+    }
   }, []);
 
   const isActive = (path: string) => (location.pathname === path ? 'bg-indigo-700' : '');
@@ -2291,6 +2414,10 @@ const KepalaSekolahDashboard = () => {
           <Link to="/kepala-sekolah/supervisi" className={`flex items-center gap-3 rounded-md px-4 py-3 transition hover:bg-indigo-700 ${isActive('/kepala-sekolah/supervisi')}`}>
             <FileText size={20} />
             Supervisi
+          </Link>
+          <Link to="/kepala-sekolah/hasil-penilaian" className={`flex items-center gap-3 rounded-md px-4 py-3 transition hover:bg-indigo-700 ${isActive('/kepala-sekolah/hasil-penilaian')}`}>
+            <CheckSquare size={20} />
+            Hasil Penilaian
           </Link>
           
           <div className="my-2 border-t border-indigo-700"></div>
@@ -2318,6 +2445,8 @@ const KepalaSekolahDashboard = () => {
                 ? 'Beban Kerja: Kewirausahaan'
               : location.pathname.startsWith('/kepala-sekolah/supervisi')
                 ? 'Beban Kerja: Supervisi'
+              : location.pathname.startsWith('/kepala-sekolah/hasil-penilaian')
+                ? 'Hasil Penilaian Kinerja'
               : location.pathname.startsWith('/kepala-sekolah/perencanaan') 
                 ? 'Observasi Perencanaan' 
               : location.pathname.startsWith('/kepala-sekolah/pelaksanaan')
@@ -2331,16 +2460,23 @@ const KepalaSekolahDashboard = () => {
           </div>
         </header>
 
-        <WorkloadCompletionStatus user={currentUser} />
-
+        <div className="mb-6 max-w-md">
+          <GoogleSyncWidget user={currentUser} />
+        </div>
         <div className="rounded-lg bg-white p-6 shadow-sm">
           <Routes>
-            <Route path="/" element={<KSDashboardHome />} />
+            <Route path="/" element={
+              <>
+                 <WorkloadCompletionStatus user={currentUser} />
+                 <KSDashboardHome />
+              </>
+            } />
             
             {/* Workload Pages */}
             <Route path="manajerial" element={<KSManajerialPage onUpdate={refreshUser} />} />
             <Route path="kewirausahaan" element={<KSKewirausahaanPage onUpdate={refreshUser} />} />
             <Route path="supervisi" element={<KSSupervisiPage onUpdate={refreshUser} />} />
+            <Route path="hasil-penilaian" element={<KSWorkloadPage />} />
 
             {/* Existing Sub-pages (kept for routing from Supervisi page) */}
             <Route path="perencanaan" element={<KSPlanningDeepList />} />

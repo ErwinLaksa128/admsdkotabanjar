@@ -4,10 +4,18 @@ import { LayoutDashboard, FileText, LogOut, Users, School, BookOpen, ChevronLeft
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 import RunningText from '../components/RunningText'
+import GoogleSyncWidget from '../components/GoogleSyncWidget'
 import { storageService, User } from '../services/storage'
 
 const DinasDashboard = () => {
   const location = useLocation()
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    const user = storageService.getCurrentUser()
+    setCurrentUser(user)
+  }, [])
+
   const isActive = (path: string) => (location.pathname === path ? 'bg-gray-800' : '')
 
   const getTitle = () => {
@@ -43,6 +51,9 @@ const DinasDashboard = () => {
           <h1 className="text-2xl font-bold text-gray-800">{getTitle()}</h1>
           <div className="text-gray-600">Selamat datang, Dinas Pendidikan</div>
         </header>
+        <div className="mb-6 max-w-md">
+           <GoogleSyncWidget user={currentUser} />
+        </div>
         <div className="rounded-lg bg-white p-6 shadow-sm min-h-[500px]">
           <Routes>
             <Route path="/" element={<DinasHome />} />

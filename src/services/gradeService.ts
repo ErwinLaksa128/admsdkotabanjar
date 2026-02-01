@@ -14,7 +14,7 @@ export interface GradeRecord {
   pertemuan?: number;
 }
 
-const STORAGE_KEY_GRADES = 'app_grades';
+const STORAGE_KEY_GRADES = 'app_grades_v2';
 
 export const gradeService = {
   getAll: (): GradeRecord[] => {

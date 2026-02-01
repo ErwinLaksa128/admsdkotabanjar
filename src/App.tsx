@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import AdminDashboard from './pages/AdminDashboard';
 import GuruDashboard from './pages/GuruDashboard';
 import Login from './pages/Login';
+import RegisterPage from './pages/RegisterPage';
 import SplashScreen from './components/SplashScreen';
 import KepalaSekolahDashboard from './pages/KepalaSekolahDashboard';
 import PengawasDashboard from './pages/PengawasDashboard';
@@ -23,6 +24,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route path="/admin/*" element={<AdminDashboard />} />
           <Route path="/guru/*" element={<GuruDashboard />} />
           <Route path="/kepala-sekolah/*" element={<KepalaSekolahDashboard />} />
