@@ -184,7 +184,8 @@ const GuruHome = () => {
                     teacherName: user.name,
                     school: user.school,
                     docType: manualDocType,
-                    fileName: `Manual Link: ${manualLink}`
+                    fileName: `Manual Link: ${manualLink}`,
+                    fileUrl: manualLink
                 });
             } catch (error) {
                 console.error('Failed to log manual input', error);
@@ -519,7 +520,8 @@ const GuruHome = () => {
             teacherName: user.name,
             school: user.school,
             docType: docName,
-            fileName: `BATCH: ${generatedFiles.length} files`
+            fileName: `BATCH: ${generatedFiles.length} files`,
+            fileUrl: url || 'https://drive.google.com' // Fallback if no URL generated
         });
       }
 

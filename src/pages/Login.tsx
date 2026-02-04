@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, School, BookOpen, Building2, ChevronLeft, Edit2, Shield } from 'lucide-react';
+import { User, School, BookOpen, Building2, ChevronLeft, Edit2, Shield, Loader2 } from 'lucide-react';
 import { storageService } from '../services/storage';
 import { supabaseService } from '../services/supabaseService';
 
@@ -54,6 +54,10 @@ const Login = () => {
 
   const [error, setError] = useState('');
 
+  // Debounce ref
+  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+
   // Sync users from Firebase
   useEffect(() => {
     const unsubscribe = supabaseService.subscribeUsers((users) => {
@@ -97,12 +101,61 @@ const Login = () => {
     setShowFullForm(true);
   };
 
-  const checkUserExistence = (nip: string, role: string) => {
-      if (!nip || nip.length < 3) return;
+  const checkUserExistence = async (nip: string, role: string) => {
+      const cleanNip = nip.trim();
+      if (!cleanNip || cleanNip.length < 3) return;
 
-      const user = storageService.validateNip(nip);
-      if (user && user.role === role) {
+      setIsChecking(true);
+      let user: any = null;
+      let relatedKepsek: any = null;
+      let relatedPengawas: any = null;
+
+      // 1. Try Remote First (Supabase)
+      try {
+        user = await supabaseService.getUserByNip(cleanNip);
+        if (user && user.role === role) {
+           storageService.saveUser(user); // Sync to local
+           
+           // Fetch Relations from Remote
+           if (role === 'guru' && user.school) {
+              relatedKepsek = await supabaseService.getKepsekBySchool(user.school);
+           }
+           if ((role === 'guru' || role === 'kepala-sekolah') && user.school) {
+              relatedPengawas = await supabaseService.getPengawasBySchool(user.school);
+           }
+        } else {
+           user = null; // Wrong role or not found
+        }
+      } catch (err) {
+        console.error('Remote check failed:', err);
+        user = null;
+      }
+
+      // 2. Fallback to Local if Remote Failed/Not Found
+      if (!user) {
+          user = storageService.validateNip(cleanNip);
+          if (user && user.role === role) {
+              // Fetch Relations locally
+              const allUsers = storageService.getUsers();
+              
+              if (role === 'guru' && user.school) {
+                  relatedKepsek = allUsers.find(u => u.role === 'kepala-sekolah' && u.school === user.school);
+              }
+              
+              if ((role === 'guru' || role === 'kepala-sekolah') && user.school) {
+                 relatedPengawas = allUsers.find(u => u.role === 'pengawas' && u.managedSchools && u.managedSchools.includes(user.school!));
+              }
+          } else {
+              user = null;
+          }
+      }
+      
+      setIsChecking(false);
+
+      // 3. Apply to UI
+      if (user) {
           setIsReturningUser(true);
+
           // If user has complete data, we can hide the form
            let isComplete = !!user.school;
            if (role === 'guru') {
@@ -113,12 +166,11 @@ const Login = () => {
                    if (!cls || !cls.trim()) isComplete = false;
                }
            }
-
            if (isComplete) {
               setShowFullForm(false);
            }
           
-          // Autofill Name based on role
+          // Autofill Form
           setFormData(prev => {
               const newData = { ...prev };
               if (role === 'guru') {
@@ -137,10 +189,13 @@ const Login = () => {
                       newData.guruClass = user.subRole.split('Kelas ')[1] || '';
                     }
                   }
-                  if (user.kepsekName) newData.kepsekName = user.kepsekName;
-                  if (user.kepsekNip) newData.kepsekNip = user.kepsekNip;
-                  if (user.pengawasName) newData.pengawasName = user.pengawasName;
-                  if (user.pengawasNip) newData.pengawasNip = user.pengawasNip;
+                  
+                  // Use found relations if direct properties are missing
+                  newData.kepsekName = user.kepsekName || (relatedKepsek ? relatedKepsek.name : '');
+                  newData.kepsekNip = user.kepsekNip || (relatedKepsek ? relatedKepsek.nip : '');
+                  newData.pengawasName = user.pengawasName || (relatedPengawas ? relatedPengawas.name : '');
+                  newData.pengawasNip = user.pengawasNip || (relatedPengawas ? relatedPengawas.nip : '');
+                  
               } else if (role === 'dinas') {
                   newData.userName = user.name;
                   if (user.school) newData.schoolName = user.school;
@@ -149,8 +204,14 @@ const Login = () => {
               } else if (role === 'kepala-sekolah') {
                   newData.kepsekName = user.name;
                   if (user.school) newData.schoolName = user.school;
-                  if (user.pengawasName) newData.pengawasName = user.pengawasName;
-                  if (user.pengawasNip) newData.pengawasNip = user.pengawasNip;
+                  
+                  // Use found relations
+                  newData.pengawasName = user.pengawasName || (relatedPengawas ? relatedPengawas.name : '');
+                  newData.pengawasNip = user.pengawasNip || (relatedPengawas ? relatedPengawas.nip : '');
+                  
+                  if (user.pangkat) newData.pangkat = user.pangkat;
+                  if (user.jabatan) newData.jabatan = user.jabatan;
+                  if (user.kecamatan) newData.kecamatan = user.kecamatan;
               } else if (role === 'pengawas') {
                   newData.pengawasName = user.name;
                   if (user.wilayahBinaan) newData.wilayahBinaan = user.wilayahBinaan;
@@ -171,7 +232,7 @@ const Login = () => {
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
-    // Check NIP dynamically
+    // Check NIP dynamically with debounce
     if (
         (selectedMainRole === 'guru' && field === 'userNip') ||
         (selectedMainRole === 'kepala-sekolah' && field === 'kepsekNip') ||
@@ -179,7 +240,13 @@ const Login = () => {
         (selectedMainRole === 'dinas' && field === 'userNip') ||
         (selectedMainRole === 'admin' && field === 'userNip')
     ) {
-        checkUserExistence(value, selectedMainRole);
+        if (debounceTimeout.current) {
+            clearTimeout(debounceTimeout.current);
+        }
+        
+        debounceTimeout.current = setTimeout(() => {
+            checkUserExistence(value, selectedMainRole);
+        }, 800); // 800ms delay
     }
   };
 
@@ -196,7 +263,7 @@ const Login = () => {
     return '';
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -221,7 +288,22 @@ const Login = () => {
     }
 
     // Validate NIP
-    const user = storageService.validateNip(nipToValidate);
+    // Force check from Supabase first
+    let user: any = null;
+    try {
+        const remoteUser = await supabaseService.getUserByNip(nipToValidate);
+        if (remoteUser) {
+            storageService.saveUser(remoteUser);
+            user = remoteUser;
+        }
+    } catch (err) {
+        console.error('Login error:', err);
+    }
+    
+    // Fallback to local if remote failed
+    if (!user) {
+        user = storageService.validateNip(nipToValidate);
+    }
     
     if (!user) {
       setError('NIP tidak terdaftar. Silakan hubungi Admin.');
@@ -390,14 +472,17 @@ const Login = () => {
                 {/* NIP First - Always Visible */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">NIP Guru</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.userNip}
-                    onChange={(e) => handleInputChange('userNip', e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                    placeholder="NIP Anda"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={formData.userNip}
+                      onChange={(e) => handleInputChange('userNip', e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                      placeholder="NIP Anda"
+                    />
+                    {isChecking && <Loader2 className="absolute right-3 top-3 animate-spin text-gray-400" size={20} />}
+                  </div>
                 </div>
 
                 {isReturningUser && !showFullForm ? (
@@ -533,14 +618,17 @@ const Login = () => {
                 {/* NIP First */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">NIP Kepala Sekolah</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.kepsekNip}
-                    onChange={(e) => handleInputChange('kepsekNip', e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                    placeholder="NIP Anda"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={formData.kepsekNip}
+                      onChange={(e) => handleInputChange('kepsekNip', e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                      placeholder="NIP Anda"
+                    />
+                    {isChecking && <Loader2 className="absolute right-3 top-3 animate-spin text-gray-400" size={20} />}
+                  </div>
                 </div>
 
                 {isReturningUser && !showFullForm ? (
@@ -672,14 +760,17 @@ const Login = () => {
                  {/* NIP First */}
                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">NIP / ID Pegawai</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.userNip}
-                      onChange={(e) => handleInputChange('userNip', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="NIP / ID"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        value={formData.userNip}
+                        onChange={(e) => handleInputChange('userNip', e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                        placeholder="NIP / ID"
+                      />
+                      {isChecking && <Loader2 className="absolute right-3 top-3 animate-spin text-gray-400" size={20} />}
+                    </div>
                  </div>
 
                  {isReturningUser && !showFullForm ? (
@@ -734,14 +825,17 @@ const Login = () => {
                 {/* NIP First */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">NIP Pengawas</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.pengawasNip}
-                    onChange={(e) => handleInputChange('pengawasNip', e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                    placeholder="NIP Anda"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={formData.pengawasNip}
+                      onChange={(e) => handleInputChange('pengawasNip', e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                      placeholder="NIP Anda"
+                    />
+                    {isChecking && <Loader2 className="absolute right-3 top-3 animate-spin text-gray-400" size={20} />}
+                  </div>
                 </div>
 
                 {isReturningUser && !showFullForm ? (
@@ -820,14 +914,17 @@ const Login = () => {
                  {/* NIP First */}
                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">NIP / ID Admin</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.userNip}
-                      onChange={(e) => handleInputChange('userNip', e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
-                      placeholder="NIP / ID"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        value={formData.userNip}
+                        onChange={(e) => handleInputChange('userNip', e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 p-2.5 focus:border-blue-500 focus:ring-blue-500"
+                        placeholder="NIP / ID"
+                      />
+                      {isChecking && <Loader2 className="absolute right-3 top-3 animate-spin text-gray-400" size={20} />}
+                    </div>
                  </div>
 
                  {isReturningUser && !showFullForm ? (
@@ -869,6 +966,20 @@ const Login = () => {
             >
               Masuk Dashboard
             </button>
+
+            {/* Registration Link */}
+            <div className="mt-6 text-center">
+              <p className="text-sm text-gray-600">
+                Belum punya akun?{' '}
+                <button
+                  type="button"
+                  onClick={() => navigate('/register')}
+                  className="font-semibold text-blue-600 hover:text-blue-500 hover:underline"
+                >
+                  Daftar Sekarang
+                </button>
+              </p>
+            </div>
           </form>
         )}
       </div>

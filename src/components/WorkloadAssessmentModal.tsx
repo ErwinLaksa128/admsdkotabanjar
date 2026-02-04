@@ -28,7 +28,8 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
       setScores(principal.workloadScores_v2 || {});
       setFeedback(principal.workloadFeedback_v2 || '');
     }
-  }, [isOpen, principal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]); // Only run on open to prevent overwriting inputs when principal updates (e.g. evidence uploaded)
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -39,12 +40,14 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
         workloadFeedback_v2: feedback,
         workloadFeedbackDate_v2: new Date().toISOString()
       };
+      
+      console.log('Saving assessment for user:', principal.nip, updatedUser);
       await supabaseService.saveUser(updatedUser);
       onSave();
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to save assessment", error);
-      alert("Gagal menyimpan penilaian.");
+      alert(`Gagal menyimpan penilaian: ${error.message || 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }
@@ -56,6 +59,12 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
     const totalItems = 18; // Fixed total items based on docs length
     const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
     return (totalScore / totalItems).toFixed(1);
+  };
+
+  // Calculate merged evidence once
+  const mergedEvidence = {
+    ...((principal as any).workloadEvidence || {}),
+    ...(principal.workloadEvidence_v2 || {})
   };
 
   return (
@@ -96,14 +105,14 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
               <div className="divide-y">
                 {section.docs.map((doc) => {
                   const score = scores[doc.id] || 0;
-                  const hasEvidence = principal.workloadEvidence_v2?.[doc.id];
+                  const hasEvidence = mergedEvidence[doc.id];
                   
                   return (
                     <div key={doc.id} className="p-4 flex items-center justify-between gap-4 hover:bg-gray-50">
                       <div className="flex-1">
                         <p className="font-medium text-gray-800 text-sm">{doc.label}</p>
                         {hasEvidence ? (
-                          <a href={principal.workloadEvidence_v2?.[doc.id]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-blue-600 hover:underline">
+                          <a href={mergedEvidence[doc.id]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-blue-600 hover:underline">
                             <Check size={12} /> Lihat Bukti
                           </a>
                         ) : (

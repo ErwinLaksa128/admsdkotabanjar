@@ -38,20 +38,47 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
   };
 
   useEffect(() => {
-    if (GOOGLE_CONFIG.CLIENT_ID && GOOGLE_CONFIG.API_KEY) {
-      setIsConfigured(true);
-      googleDriveService.init((signedIn) => {
+    // We allow initialization even without keys now (Mock Mode)
+    setIsConfigured(true);
+      
+    // Set a timeout to detect if Google scripts fail to load
+    const timeoutId = setTimeout(() => {
+        if (!isSignedIn && status === '' && !googleDriveService.isMock) {
+             // Only show error if we haven't successfully signed in or updated status yet
+             // Check if window.gapi is actually missing
+             if (!window.gapi || !window.google) {
+                 setStatus('Offline / Google API tidak dapat dimuat');
+             }
+        }
+    }, 5000); // 5 seconds timeout
+
+    try {
+    googleDriveService.init((signedIn) => {
         // Init callback
         if (signedIn) {
             setIsSignedIn(true);
-            setStatus('Terhubung ke Google Drive');
+            if (googleDriveService.isMock) {
+                setStatus('Terhubung (Mode Simulasi)');
+            } else {
+                setStatus('Terhubung ke Google Drive');
+            }
             // Check backup status after a short delay to ensure client is ready
             setTimeout(() => {
                 checkBackupStatus();
             }, 1000);
+        } else if (googleDriveService.isMock) {
+             // Mock mode but not signed in yet
+             setStatus('Siap (Mode Simulasi)');
         }
-      });
+        clearTimeout(timeoutId); // Clear timeout on success
+    });
+    } catch (err) {
+        console.error('Google Drive init error:', err);
+        setStatus('Gagal memuat Google Drive Service');
+        clearTimeout(timeoutId);
     }
+    
+    return () => clearTimeout(timeoutId);
 
   }, []);
 

@@ -1743,17 +1743,18 @@ const KSDashboardHome = () => {
         setTeacherScores(scores);
       });
 
-      const unsubscribeStats = supabaseService.subscribeGeneratedDocsBySchool(currentUser.school, (logs) => {
+      const unsubscribeStats = supabaseService.subscribeGeneratedDocsBySchool(currentUser.school?.trim(), (logs) => {
          const stats: Record<string, number> = {};
          const teacherDocs: Record<string, Set<string>> = {};
 
          // Group by teacher and count unique docTypes
          logs.forEach(log => {
-             if (log.teacherNip && log.docType) {
-                 if (!teacherDocs[log.teacherNip]) {
-                     teacherDocs[log.teacherNip] = new Set();
+             const nip = log.teacherNip ? log.teacherNip.trim() : '';
+             if (nip && log.docType) {
+                 if (!teacherDocs[nip]) {
+                     teacherDocs[nip] = new Set();
                  }
-                 teacherDocs[log.teacherNip].add(log.docType);
+                 teacherDocs[nip].add(log.docType);
              }
          });
 

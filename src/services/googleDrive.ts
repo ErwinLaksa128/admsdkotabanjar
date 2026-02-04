@@ -26,39 +26,52 @@ export const googleDriveService = {
   tokenClient: null as any,
   gapiInited: false,
   gisInited: false,
+  isMock: false,
 
   init: async (callback: (isSignedIn: boolean) => void) => {
     if (!GOOGLE_CONFIG.CLIENT_ID || !GOOGLE_CONFIG.API_KEY) {
-      console.warn('Google Drive Client ID or API Key is missing');
+      console.warn('Google Drive Client ID or API Key is missing. Switch to Mock Mode.');
+      googleDriveService.isMock = true;
+      // Simulate signed in state check
+      const mockToken = localStorage.getItem('mock_gdrive_token');
+      callback(!!mockToken);
       return;
     }
     
     // Load GAPI
     if (window.gapi) {
-      window.gapi.load('client', async () => {
-        await window.gapi.client.init({
-          apiKey: GOOGLE_CONFIG.API_KEY,
-          discoveryDocs: [GOOGLE_CONFIG.DISCOVERY_DOC],
-        });
-        
-        // Restore token if exists
-        const savedToken = localStorage.getItem('gdrive_token');
-        if (savedToken) {
-            try {
-                const token = JSON.parse(savedToken);
-                window.gapi.client.setToken(token);
-            } catch (e) {
-                console.error('Invalid saved token', e);
-                localStorage.removeItem('gdrive_token');
+      try {
+        window.gapi.load('client', async () => {
+          try {
+            await window.gapi.client.init({
+              apiKey: GOOGLE_CONFIG.API_KEY,
+              discoveryDocs: [GOOGLE_CONFIG.DISCOVERY_DOC],
+            });
+            
+            // Restore token if exists
+            const savedToken = localStorage.getItem('gdrive_token');
+            if (savedToken) {
+                try {
+                    const token = JSON.parse(savedToken);
+                    window.gapi.client.setToken(token);
+                } catch (e) {
+                    console.error('Invalid saved token', e);
+                    localStorage.removeItem('gdrive_token');
+                }
             }
-        }
 
-        googleDriveService.gapiInited = true;
-        if (googleDriveService.gisInited) {
-             const isSignedIn = !!window.gapi.client.getToken();
-             callback(isSignedIn);
-        }
-      });
+            googleDriveService.gapiInited = true;
+            if (googleDriveService.gisInited) {
+                const isSignedIn = !!window.gapi.client.getToken();
+                callback(isSignedIn);
+            }
+          } catch (initError) {
+             console.error('GAPI client init failed (network?):', initError);
+          }
+        });
+      } catch (loadError) {
+         console.error('GAPI load failed:', loadError);
+      }
     }
 
     // Load GIS
@@ -78,6 +91,12 @@ export const googleDriveService = {
 
   signIn: () => {
     return new Promise<void>((resolve, reject) => {
+      if (googleDriveService.isMock) {
+        localStorage.setItem('mock_gdrive_token', 'mock-token-123');
+        resolve();
+        return;
+      }
+
       if (!googleDriveService.tokenClient) {
         reject('Google Drive API not initialized');
         return;
@@ -105,6 +124,10 @@ export const googleDriveService = {
   },
 
   signOut: () => {
+    if (googleDriveService.isMock) {
+      localStorage.removeItem('mock_gdrive_token');
+      return;
+    }
     const token = window.gapi.client.getToken();
     if (token !== null) {
       window.google.accounts.oauth2.revoke(token.access_token);
@@ -186,6 +209,14 @@ export const googleDriveService = {
   // Upload data (Create or Update)
   uploadBackup: async (data: any, filename: string = BACKUP_FILENAME) => {
     const fileContent = JSON.stringify(data);
+    
+    if (googleDriveService.isMock) {
+        // Simulate upload delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        localStorage.setItem('mock_gdrive_file_' + filename, fileContent);
+        return true;
+    }
+
     const file = new Blob([fileContent], { type: 'application/json' });
     const metadata = {
       name: filename,

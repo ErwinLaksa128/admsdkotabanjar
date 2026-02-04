@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, School, ArrowLeft, Save } from 'lucide-react';
+import { User, School, ArrowLeft, Save, BookOpen } from 'lucide-react';
 import { storageService } from '../services/storage';
 import { supabaseService } from '../services/supabaseService';
 import { DEFAULT_SCHOOLS } from '../services/storage';
 
 const ROLES = [
-  { id: 'guru', label: 'Guru', icon: <User size={20} /> },
+  { id: 'pengawas', label: 'Pengawas', icon: <BookOpen size={20} /> },
   { id: 'kepala-sekolah', label: 'Kepala Sekolah', icon: <School size={20} /> },
+  { id: 'guru', label: 'Guru', icon: <User size={20} /> },
 ];
 
 const RegisterPage = () => {
@@ -65,9 +66,20 @@ const RegisterPage = () => {
     }
 
     // Check if NIP already exists
+    try {
+        const remoteUser = await supabaseService.getUserByNip(formData.nip);
+        if (remoteUser) {
+             setError(`NIP ${formData.nip} sudah terdaftar di sistem pusat atas nama ${remoteUser.name}. Silakan login.`);
+             setIsSubmitting(false);
+             return;
+        }
+    } catch (err) {
+        console.warn('Remote validation skipped due to error:', err);
+    }
+
     const existingUser = storageService.validateNip(formData.nip);
     if (existingUser) {
-      setError(`NIP ${formData.nip} sudah terdaftar atas nama ${existingUser.name}. Silakan login.`);
+      setError(`NIP ${formData.nip} sudah terdaftar di lokal atas nama ${existingUser.name}. Silakan login.`);
       setIsSubmitting(false);
       return;
     }
@@ -94,34 +106,57 @@ const RegisterPage = () => {
       subRole: role === 'guru' ? subRole : undefined,
       isPremium: false, // Default Free User
       // Optional fields based on role
-      pangkat: role === 'kepala-sekolah' ? formData.pangkat : undefined,
-      jabatan: role === 'kepala-sekolah' ? formData.jabatan : undefined,
+      pangkat: (role === 'kepala-sekolah' || role === 'pengawas') ? formData.pangkat : undefined,
+      jabatan: (role === 'kepala-sekolah' || role === 'pengawas') ? formData.jabatan : undefined,
+      wilayahBinaan: role === 'pengawas' ? formData.wilayahBinaan : undefined,
     };
 
     // Auto-assign Officials for Guru
     if (role === 'guru' && formData.school) {
-        const allUsers = storageService.getUsers();
-        
-        // Find Kepala Sekolah
-        const kepsek = allUsers.find(u => u.role === 'kepala-sekolah' && u.school === formData.school);
-        if (kepsek) {
-            newUser.kepsekName = kepsek.name;
-            newUser.kepsekNip = kepsek.nip;
+        // 1. Try Remote Relations First
+        try {
+            const kepsekRemote = await supabaseService.getKepsekBySchool(formData.school);
+            if (kepsekRemote) {
+                newUser.kepsekName = kepsekRemote.name;
+                newUser.kepsekNip = kepsekRemote.nip;
+            }
+            
+            const pengawasRemote = await supabaseService.getPengawasBySchool(formData.school);
+            if (pengawasRemote) {
+                newUser.pengawasName = pengawasRemote.name;
+                newUser.pengawasNip = pengawasRemote.nip;
+                newUser.wilayahBinaan = pengawasRemote.wilayahBinaan;
+            }
+        } catch (e) {
+            console.error('Failed to fetch remote relations during registration', e);
         }
 
-        // Find Pengawas
-        const pengawas = allUsers.find(u => u.role === 'pengawas' && u.managedSchools?.includes(formData.school));
-        if (pengawas) {
-            newUser.pengawasName = pengawas.name;
-            newUser.pengawasNip = pengawas.nip;
-            newUser.wilayahBinaan = pengawas.wilayahBinaan;
+        // 2. Fallback to Local if not found
+        if (!newUser.kepsekName) {
+            const allUsers = storageService.getUsers();
+            const kepsek = allUsers.find(u => u.role === 'kepala-sekolah' && u.school === formData.school);
+            if (kepsek) {
+                newUser.kepsekName = kepsek.name;
+                newUser.kepsekNip = kepsek.nip;
+            }
+        }
+        
+        if (!newUser.pengawasName) {
+             const allUsers = storageService.getUsers();
+             const pengawas = allUsers.find(u => u.role === 'pengawas' && u.managedSchools?.includes(formData.school));
+             if (pengawas) {
+                newUser.pengawasName = pengawas.name;
+                newUser.pengawasNip = pengawas.nip;
+                newUser.wilayahBinaan = pengawas.wilayahBinaan;
+             }
         }
     }
 
     try {
-      // Save to Storage & Firebase
+      // Save to Supabase (Await it!)
+      await supabaseService.saveUser(newUser);
+      // Save to Local Storage
       storageService.saveUser(newUser);
-      supabaseService.saveUser(newUser);
 
       // Redirect to Login
       alert('Pendaftaran berhasil! Silakan login dengan NIP Anda.');
@@ -195,18 +230,30 @@ const RegisterPage = () => {
             </div>
 
             <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Sekolah</label>
-                <select 
-                    value={formData.school}
-                    onChange={(e) => handleChange('school', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    required
-                >
-                    <option value="">-- Pilih Sekolah --</option>
-                    {DEFAULT_SCHOOLS.map(s => (
-                        <option key={s.npsn} value={s.name}>{s.name}</option>
-                    ))}
-                </select>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    {role === 'pengawas' ? 'Kantor / Unit Kerja' : 'Sekolah'}
+                </label>
+                {role === 'pengawas' ? (
+                     <input 
+                        type="text" 
+                        value={formData.school} // We use school field for Office name for Pengawas temporarily or just generic input
+                        onChange={(e) => handleChange('school', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="Contoh: Dinas Pendidikan Kota Banjar"
+                    />
+                ) : (
+                    <select 
+                        value={formData.school}
+                        onChange={(e) => handleChange('school', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        required={role !== 'pengawas'}
+                    >
+                        <option value="">-- Pilih Sekolah --</option>
+                        {DEFAULT_SCHOOLS.map(s => (
+                            <option key={s.npsn} value={s.name}>{s.name}</option>
+                        ))}
+                    </select>
+                )}
             </div>
 
             {/* Guru Specific */}
@@ -241,6 +288,43 @@ const RegisterPage = () => {
                             </select>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Pengawas Specific */}
+            {role === 'pengawas' && (
+                <div className="bg-green-50 p-4 rounded-lg space-y-3 border border-green-100">
+                    <h3 className="text-sm font-bold text-green-800">Detail Pengawas</h3>
+                    <div>
+                         <label className="block text-xs font-semibold text-gray-600 mb-1">Wilayah Binaan</label>
+                         <input 
+                            type="text"
+                            value={formData.wilayahBinaan}
+                            onChange={(e) => handleChange('wilayahBinaan', e.target.value)}
+                            placeholder="Contoh: Kecamatan Pataruman, Purwaharja"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 outline-none"
+                        />
+                    </div>
+                    <div>
+                         <label className="block text-xs font-semibold text-gray-600 mb-1">Pangkat/Golongan</label>
+                         <input 
+                            type="text"
+                            value={formData.pangkat}
+                            onChange={(e) => handleChange('pangkat', e.target.value)}
+                            placeholder="Contoh: Pembina Utama Muda, IV/c"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 outline-none"
+                        />
+                    </div>
+                    <div>
+                         <label className="block text-xs font-semibold text-gray-600 mb-1">Jabatan</label>
+                         <input 
+                            type="text"
+                            value={formData.jabatan}
+                            onChange={(e) => handleChange('jabatan', e.target.value)}
+                            placeholder="Pengawas Sekolah Madya"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-green-500 outline-none"
+                        />
+                    </div>
                 </div>
             )}
 

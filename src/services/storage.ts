@@ -11,6 +11,9 @@ export interface School {
 }
 
 export const DEFAULT_SCHOOLS: School[] = [
+  // Sekolah Percontohan
+  { npsn: '12345678', name: 'SDN Percontohan 1', address: 'Jl. Pendidikan No. 1', village: 'Percontohan', district: 'Pusat', status: 'NEGERI', guruCount: 20, tasCount: 5 },
+
   // Kecamatan Banjar
   { npsn: '69896395', name: 'SD INSPIRATIF AL-ILHAM', address: 'JL. LOBAK NO. 519 RT. 04 RW. 15 LINGK. BANJAR KOLOT', village: 'Banjar', district: 'Banjar', status: 'SWASTA', guruCount: 25, tasCount: 6 },
   { npsn: '70045735', name: 'SD Islam Al Istiqomah', address: 'Dusun Gardu RT 020/RW 007', village: 'Balokang', district: 'Banjar', status: 'SWASTA', guruCount: 9, tasCount: 2 },
@@ -579,8 +582,13 @@ export const storageService = {
   },
   
   getCurrentUser: (): User | null => {
-    const stored = sessionStorage.getItem('currentUser') || localStorage.getItem('currentUser');
-    return stored ? JSON.parse(stored) : null;
+    try {
+      const stored = sessionStorage.getItem('currentUser') || localStorage.getItem('currentUser');
+      return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+      console.error("Error parsing current user:", error);
+      return null;
+    }
   },
 
   logout: () => {

@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, Component, ReactNode } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, CheckSquare, LogOut, School as SchoolIcon, Users, X, ChevronRight, Settings, Save, Check, ClipboardList, PlusCircle } from 'lucide-react'
+import { LayoutDashboard, CheckSquare, LogOut, School as SchoolIcon, Users, X, ChevronRight, Settings, Save, Check, ClipboardList, PlusCircle, ExternalLink, AlertTriangle } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts'
 import GoogleSyncWidget from '../components/GoogleSyncWidget'
 import RunningText from '../components/RunningText'
@@ -8,9 +8,73 @@ import WorkloadAssessmentModal from '../components/WorkloadAssessmentModal'
 import SupervisionListModal from '../components/SupervisionListModal'
 import { supabaseService } from '../services/supabaseService'
 import { User, storageService, SchoolVisit, School, SupervisionReport } from '../services/storage'
-import { MANAJERIAL_DOCS, KEWIRAUSAHAAN_DOCS, SUPERVISI_EVIDENCE_DOCS } from '../constants/documents'
+import { MANAJERIAL_DOCS, KEWIRAUSAHAAN_DOCS, SUPERVISI_EVIDENCE_DOCS, ADMIN_DOCS } from '../constants/documents'
 
+class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean, error: Error | null}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 bg-red-50 border border-red-200 rounded-lg m-4">
+          <h3 className="text-lg font-bold text-red-800 mb-2">Terjadi Kesalahan pada Dashboard</h3>
+          <p className="text-sm text-red-700 mb-4">Mohon maaf, terjadi kesalahan saat memuat komponen ini.</p>
+          <div className="bg-white p-4 rounded border border-red-100 mb-4 overflow-auto max-h-40">
+            <code className="text-xs text-red-600 block">
+              {this.state.error?.toString()}
+            </code>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition"
+          >
+            Muat Ulang Halaman
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Helper to get the best principal for a school (prioritizing active and evidence count)
+const getBestPrincipal = (users: User[], schoolName: string): User | undefined => {
+  const normalize = (str: string | undefined | null) => str?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
+  const candidates = users.filter(u => 
+      normalize(u.school) === normalize(schoolName) && 
+      u.role === 'kepala-sekolah'
+  );
+
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+
+  // Filter active ones first
+  const activeCandidates = candidates.filter(u => u.active);
+  const pool = activeCandidates.length > 0 ? activeCandidates : candidates;
+
+  // Sort by evidence count (descending)
+  // Fix: Merge v2 and legacy evidence to count total items correctly
+  return pool.sort((a, b) => {
+      const evidenceA = { ...((a as any).workloadEvidence || {}), ...(a.workloadEvidence_v2 || {}) };
+      const evidenceB = { ...((b as any).workloadEvidence || {}), ...(b.workloadEvidence_v2 || {}) };
+      
+      const countA = Object.keys(evidenceA).length;
+      const countB = Object.keys(evidenceB).length;
+      return countB - countA;
+  })[0];
+};
 
 interface PengawasHomeProps {
   users: User[];
@@ -21,6 +85,7 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
   const [schoolsData, setSchoolsData] = useState<School[]>([]); // Full School Objects
   const [displayedSchools, setDisplayedSchools] = useState<School[]>([]); // Schools to show (filtered)
   const [selectedSchool, setSelectedSchool] = useState<string | null>(null);
+  const [selectedSchoolDocs, setSelectedSchoolDocs] = useState<any[]>([]);
   const [schoolStatsMap, setSchoolStatsMap] = useState<any[]>([]);
 
   // Management Modal State
@@ -50,6 +115,17 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // DEBUG: Monitor users updates
+  useEffect(() => {
+    if (users.length > 0) {
+        const target = users.find(u => u.nip === '222224');
+        console.log("DEBUG: Target Principal Data in Dashboard:", target);
+        if (target) {
+            console.log("DEBUG: Evidence:", target.workloadEvidence_v2);
+        }
+    }
+  }, [users]);
 
   useEffect(() => {
     // Initial User Load - Handled by Parent
@@ -119,6 +195,32 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
     }
   }, [schoolsData, currentUser]);
 
+  // Subscribe to Generated Docs for Selected School
+  useEffect(() => {
+    if (selectedSchool) {
+        // Reset first
+        setSelectedSchoolDocs([]);
+        
+        const unsubscribe = supabaseService.subscribeGeneratedDocsBySchool(selectedSchool, (data) => {
+            setSelectedSchoolDocs(data);
+        });
+
+        return () => {
+            unsubscribe();
+        };
+    }
+  }, [selectedSchool]);
+
+  // Keep assessmentPrincipal in sync with real-time users to reflect evidence updates
+  useEffect(() => {
+    if (assessmentPrincipal) {
+       const updated = users.find(u => u.nip === assessmentPrincipal.nip);
+       if (updated) {
+          setAssessmentPrincipal(updated);
+       }
+    }
+  }, [users, assessmentPrincipal?.nip]);
+
   const normalize = (str: string | undefined | null) => str?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
 
   const getSchoolStats = (schoolName: string) => {
@@ -131,270 +233,240 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
 
   // Chart Data Preparation
   const chartData = useMemo(() => {
-    // 1. School Activity (Visits + Supervisions)
-    const schoolActivityData = displayedSchools.map(school => {
-       const visitCount = allVisits.filter(v => normalize(v.schoolName) === normalize(school.name)).length;
-       const supervisionCount = allSupervisions.filter(r => (r as any).school === school.name || normalize((r as any).school) === normalize(school.name)).length;
-       
-       return {
-         name: school.name.replace('SDN ', '').replace('SDIT ', '').substring(0, 10), // Short name
-         fullName: school.name,
-         visits: visitCount,
-         supervisions: supervisionCount,
-         total: visitCount + supervisionCount
-       };
-    }).sort((a, b) => b.total - a.total).slice(0, 10); // Top 10 active schools
-
-    // 2. Monthly Trend (Cumulative Teacher Supervision)
-    const monthlyData: any[] = [];
-    // 2b. Monthly Trend (School Activity) - RESTORED
-    const schoolActivityTrendData: any[] = [];
-    
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonthIndex = now.getMonth(); // 0-based index
-    
-    // Calculate Total Teachers in Managed Schools
-    const totalTeachersCount = displayedSchools.reduce((acc, s) => acc + (s.guruCount || 0), 0);
-
-    // Add start point (0)
-    monthlyData.push({
-        name: '', 
-        perencanaan: 0,
-        pelaksanaan: 0,
-        instrumen: 0,
-        totalTeachers: totalTeachersCount
-    });
-
-    schoolActivityTrendData.push({
-        name: '',
-        manajerial: 0,
-        monitoring: 0,
-        akademik: 0,
-        evaluasi: 0,
-        totalSchools: displayedSchools.length
-    });
-
-    // Iterate from January (0) to December (11) of the current year
-    for (let i = 0; i < 12; i++) {
-        const monthLabel = months[i];
-        
-        // Only calculate coverage if month is within range (<= current month)
-        let perencanaan: number | null = null;
-        let pelaksanaan: number | null = null;
-        let instrumen: number | null = null;
-
-        let manajerial: number | null = null;
-        let monitoring: number | null = null;
-        let akademik: number | null = null;
-        let evaluasi: number | null = null;
-        
-        if (i <= currentMonthIndex) {
-            const endOfMonth = new Date(currentYear, i + 1, 0); // Last day of month i
-            
-            // Sets to track unique TEACHERS per category
-            const perencanaanSet = new Set<string>();
-            const pelaksanaanSet = new Set<string>();
-            const instrumenSet = new Set<string>();
-
-            // Sets to track unique SCHOOLS per category (Activity)
-            const manajerialSet = new Set<string>();
-            const monitoringSet = new Set<string>();
-            const akademikSet = new Set<string>();
-            const evaluasiSet = new Set<string>();
-
-            // Helper to check if school is managed
-            const isManagedSchool = (name: string) => displayedSchools.some(s => normalize(s.name) === normalize(name));
-
-            // Process Visits for Activity
-            allVisits.forEach(v => {
-                const vDate = new Date(v.date);
-                if (vDate.getFullYear() === currentYear && vDate <= endOfMonth) {
-                    if (isManagedSchool(v.schoolName)) {
-                        const purpose = (v.purpose || '').toLowerCase();
-                        const school = normalize(v.schoolName);
-                        
-                        // Categorization Logic
-                        if (purpose.includes('manajerial')) {
-                            manajerialSet.add(school);
-                        } else if (purpose.includes('evaluasi')) {
-                            evaluasiSet.add(school);
-                        } else if (purpose.includes('akademik')) {
-                            akademikSet.add(school);
-                        } else {
-                            // Default to Monitoring Rutin
-                            monitoringSet.add(school);
-                        }
-                    }
-                }
-            });
-
-            // Process Supervisions for both Teacher Progress and School Activity (Akademik)
-            allSupervisions.forEach(r => {
-                 const sDate = new Date(r.date);
-                 // Check if report is within the cumulative period (up to end of this month)
-                 if (sDate.getFullYear() === currentYear && sDate <= endOfMonth) {
-                     const schoolName = (r as any).school;
-                     // Only count if school is managed
-                     if (schoolName && isManagedSchool(schoolName)) {
-                        const type = r.type;
-                        const teacherId = r.teacherNip || r.teacherName; // Use NIP or Name as unique identifier
-                        
-                        // For Teacher Supervision Progress
-                        if (type === 'planning' || type === 'planning_deep') {
-                            perencanaanSet.add(teacherId);
-                        } else if (type === 'observation') {
-                            pelaksanaanSet.add(teacherId);
-                        } else if (type === 'administration') {
-                            instrumenSet.add(teacherId);
-                        }
-
-                        // For School Activity (Akademik)
-                        akademikSet.add(normalize(schoolName));
-                     }
-                 }
-            });
-            
-            perencanaan = perencanaanSet.size;
-            pelaksanaan = pelaksanaanSet.size;
-            instrumen = instrumenSet.size;
-
-            manajerial = manajerialSet.size;
-            monitoring = monitoringSet.size;
-            akademik = akademikSet.size;
-            evaluasi = evaluasiSet.size;
-        }
-
-        monthlyData.push({
-            name: `${monthLabel}`,
-            perencanaan,
-            pelaksanaan,
-            instrumen,
-            totalTeachers: totalTeachersCount
-        });
-
-        schoolActivityTrendData.push({
-            name: `${monthLabel}`,
-            manajerial,
-            monitoring,
-            akademik,
-            evaluasi,
-            totalSchools: displayedSchools.length
-        });
+    try {
+      // 1. School Activity (Visits + Supervisions)
+      const schoolActivityData = displayedSchools.map(school => {
+         const visitCount = allVisits.filter(v => normalize(v.schoolName) === normalize(school.name)).length;
+         const supervisionCount = allSupervisions.filter(r => (r as any).school === school.name || normalize((r as any).school) === normalize(school.name)).length;
+         
+         return {
+           name: school.name.replace('SDN ', '').replace('SDIT ', '').substring(0, 10), // Short name
+           fullName: school.name,
+           visits: visitCount,
+           supervisions: supervisionCount,
+           total: visitCount + supervisionCount
+         };
+      }).sort((a, b) => b.total - a.total).slice(0, 10); // Top 10 active schools
+  
+      // 2. Monthly Trend (Cumulative Teacher Supervision)
+      const monthlyData: any[] = [];
+      // 2b. Monthly Trend (School Activity) - RESTORED
+      const schoolActivityTrendData: any[] = [];
+      
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonthIndex = now.getMonth(); // 0-based index
+      
+      // Calculate Total Teachers in Managed Schools
+      const totalTeachersCount = displayedSchools.reduce((acc, s) => acc + (s.guruCount || 0), 0);
+  
+      // Add start point (0)
+      monthlyData.push({
+          name: '', 
+          perencanaan: 0,
+          pelaksanaan: 0,
+          instrumen: 0,
+          totalTeachers: totalTeachersCount
+      });
+  
+      schoolActivityTrendData.push({
+          name: '',
+          manajerial: 0,
+          monitoring: 0,
+          akademik: 0,
+          evaluasi: 0,
+          totalSchools: displayedSchools.length
+      });
+  
+      // Iterate from January (0) to December (11) of the current year
+      for (let i = 0; i < 12; i++) {
+          const monthLabel = months[i];
+          
+          // Only calculate coverage if month is within range (<= current month)
+          let perencanaan: number | null = null;
+          let pelaksanaan: number | null = null;
+          let instrumen: number | null = null;
+  
+          let manajerial: number | null = null;
+          let monitoring: number | null = null;
+          let akademik: number | null = null;
+          let evaluasi: number | null = null;
+          
+          if (i <= currentMonthIndex) {
+              const endOfMonth = new Date(currentYear, i + 1, 0); // Last day of month i
+              
+              // Sets to track unique TEACHERS per category
+              const perencanaanSet = new Set<string>();
+              const pelaksanaanSet = new Set<string>();
+              const instrumenSet = new Set<string>();
+  
+              // Sets to track unique SCHOOLS per category (Activity)
+              const manajerialSet = new Set<string>();
+              const monitoringSet = new Set<string>();
+              const akademikSet = new Set<string>();
+              const evaluasiSet = new Set<string>();
+  
+              // Helper to check if school is managed
+              const isManagedSchool = (name: string) => displayedSchools.some(s => normalize(s.name) === normalize(name));
+  
+              // Process Visits for Activity
+              allVisits.forEach(v => {
+                  const vDate = new Date(v.date);
+                  if (vDate.getFullYear() === currentYear && vDate <= endOfMonth) {
+                      if (isManagedSchool(v.schoolName)) {
+                          const purpose = (v.purpose || '').toLowerCase();
+                          const school = normalize(v.schoolName);
+                          
+                          // Categorization Logic
+                          if (purpose.includes('manajerial')) {
+                              manajerialSet.add(school);
+                          } else if (purpose.includes('evaluasi')) {
+                              evaluasiSet.add(school);
+                          } else if (purpose.includes('akademik')) {
+                              akademikSet.add(school);
+                          } else {
+                              // Default to Monitoring Rutin
+                              monitoringSet.add(school);
+                          }
+                      }
+                  }
+              });
+  
+              // Process Supervisions for both Teacher Progress and School Activity (Akademik)
+              allSupervisions.forEach(r => {
+                   const sDate = new Date(r.date);
+                   // Check if report is within the cumulative period (up to end of this month)
+                   if (sDate.getFullYear() === currentYear && sDate <= endOfMonth) {
+                       const schoolName = (r as any).school;
+                       // Only count if school is managed
+                       if (schoolName && isManagedSchool(schoolName)) {
+                          const type = r.type;
+                          const teacherId = r.teacherNip || r.teacherName; // Use NIP or Name as unique identifier
+                          
+                          // For Teacher Supervision Progress
+                          if (type === 'planning' || type === 'planning_deep') {
+                              perencanaanSet.add(teacherId);
+                          } else if (type === 'observation') {
+                              pelaksanaanSet.add(teacherId);
+                          } else if (type === 'administration') {
+                              instrumenSet.add(teacherId);
+                          }
+  
+                          // For School Activity (Akademik)
+                          akademikSet.add(normalize(schoolName));
+                       }
+                   }
+              });
+              
+              perencanaan = perencanaanSet.size;
+              pelaksanaan = pelaksanaanSet.size;
+              instrumen = instrumenSet.size;
+  
+              manajerial = manajerialSet.size;
+              monitoring = monitoringSet.size;
+              akademik = akademikSet.size;
+              evaluasi = evaluasiSet.size;
+          }
+  
+          monthlyData.push({
+              name: `${monthLabel}`,
+              perencanaan,
+              pelaksanaan,
+              instrumen,
+              totalTeachers: totalTeachersCount
+          });
+  
+          schoolActivityTrendData.push({
+              name: `${monthLabel}`,
+              manajerial,
+              monitoring,
+              akademik,
+              evaluasi,
+              totalSchools: displayedSchools.length
+          });
+      }
+  
+      // 3. Teacher Admin Progress per School
+      const adminProgressData = displayedSchools.map(school => {
+          const stats = getSchoolStats(school.name);
+          let totalDocs = 0;
+          let teacherCount = 0;
+          
+          if (stats && stats.teachers) {
+              Object.values(stats.teachers).forEach((t: any) => {
+                  totalDocs += (t.docs || 0);
+                  teacherCount++;
+              });
+          }
+          
+          const avgDocs = teacherCount > 0 ? Math.round(totalDocs / teacherCount) : 0;
+          
+          return {
+              name: school.name.replace('SDN ', '').replace('SDIT ', '').substring(0, 10),
+              fullName: school.name,
+              avgDocs: avgDocs,
+              totalDocs: stats?.totalDocs || 0
+          };
+      }).sort((a, b) => b.avgDocs - a.avgDocs).slice(0, 10);
+  
+      // 5. Overall Principal Progress Trend (Line Chart)
+      const ksProgressTrendData: any[] = [];
+      
+      // Add start point (0)
+      ksProgressTrendData.push({
+          name: '', 
+          progress: 0
+      });
+  
+      for (let i = 0; i < 12; i++) {
+          const monthLabel = months[i];
+          let progress: number | null = null;
+          
+          if (i <= currentMonthIndex) {
+              let totalPossibleDocs = 0;
+              let totalFilledDocs = 0;
+              
+              const managedPrincipals = displayedSchools
+                .map(s => getBestPrincipal(users, s.name))
+                .filter((p): p is User => !!p);
+  
+              managedPrincipals.forEach(p => {
+                   const totalItems = (MANAJERIAL_DOCS?.length || 0) + (KEWIRAUSAHAAN_DOCS?.length || 0) + (SUPERVISI_EVIDENCE_DOCS?.length || 0);
+                   const allIds = [
+                      ...(MANAJERIAL_DOCS?.map(d => d.id) || []),
+                      ...(KEWIRAUSAHAAN_DOCS?.map(d => d.id) || []),
+                      ...(SUPERVISI_EVIDENCE_DOCS?.map(d => d.id) || [])
+                   ];
+                   const evidence = p.workloadEvidence_v2 || (p as any).workloadEvidence || {};
+                   const filledCount = allIds.filter(id => evidence[id]).length;
+                   
+                   totalPossibleDocs += totalItems;
+                   totalFilledDocs += filledCount;
+              });
+  
+              const globalAvg = totalPossibleDocs > 0 ? Math.round((totalFilledDocs / totalPossibleDocs) * 100) : 0;
+              
+              progress = Math.round((globalAvg * (i + 1)) / (currentMonthIndex + 1));
+          }
+  
+          ksProgressTrendData.push({
+              name: `${monthLabel}`,
+              progress: progress
+          });
+      }
+  
+      return { schoolActivityData, monthlyData, schoolActivityTrendData, adminProgressData, ksProgressTrendData };
+    } catch (err) {
+      console.error("Error calculating chart data:", err);
+      return { 
+        schoolActivityData: [], 
+        monthlyData: [], 
+        schoolActivityTrendData: [], 
+        adminProgressData: [], 
+        ksProgressTrendData: [] 
+      };
     }
-
-    // 3. Teacher Admin Progress per School
-    const adminProgressData = displayedSchools.map(school => {
-        const stats = getSchoolStats(school.name);
-        let totalDocs = 0;
-        let teacherCount = 0;
-        
-        if (stats && stats.teachers) {
-            Object.values(stats.teachers).forEach((t: any) => {
-                totalDocs += (t.docs || 0);
-                teacherCount++;
-            });
-        }
-        
-        const avgDocs = teacherCount > 0 ? Math.round(totalDocs / teacherCount) : 0;
-        
-        return {
-            name: school.name.replace('SDN ', '').replace('SDIT ', '').substring(0, 10),
-            fullName: school.name,
-            avgDocs: avgDocs,
-            totalDocs: stats?.totalDocs || 0
-        };
-    }).sort((a, b) => b.avgDocs - a.avgDocs).slice(0, 10);
-
-    // 5. Overall Principal Progress Trend (Line Chart)
-    const ksProgressTrendData: any[] = [];
-    
-    // Add start point (0)
-    ksProgressTrendData.push({
-        name: '', 
-        progress: 0
-    });
-
-    for (let i = 0; i < 12; i++) {
-        const monthLabel = months[i];
-        let progress: number | null = null;
-        
-        if (i <= currentMonthIndex) {
-            // Calculate Average Progress of ALL Principals up to this month
-            // Note: Since we don't have historical progress data, we simulate it based on current state 
-            // OR we use the "workloadFeedbackDate" as a proxy for when progress was made.
-            // For now, let's use the CURRENT total average as the "Latest" point, and assume linear growth or just show current state?
-            // User request: "akumulasi dari keseluruhan progres data semua kepala sekolah"
-            // And "sesuai dengan waktu tersebut secara realtime"
-            // To be accurate historically, we would need logs of when each doc was uploaded.
-            // Assuming current state is the best we have, let's calculate the GLOBAL AVERAGE % of all principals.
-            
-            let totalPossibleDocs = 0;
-            let totalFilledDocs = 0;
-            
-            const managedPrincipals = users.filter(u => 
-                u.role === 'kepala-sekolah' && 
-                displayedSchools.some(s => normalize(s.name) === normalize(u.school))
-            );
-
-            managedPrincipals.forEach(p => {
-                 const totalItems = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length;
-                 const allIds = [
-                    ...MANAJERIAL_DOCS.map(d => d.id),
-                    ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
-                    ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
-                 ];
-                 const filledCount = allIds.filter(id => p.workloadEvidence_v2?.[id]).length;
-                 
-                 totalPossibleDocs += totalItems;
-                 totalFilledDocs += filledCount;
-            });
-
-            const globalAvg = totalPossibleDocs > 0 ? Math.round((totalFilledDocs / totalPossibleDocs) * 100) : 0;
-            
-            // For now, since we lack timestamps for every single doc upload, 
-            // we will show the CURRENT global average for the CURRENT month,
-            // and 0 for start. 
-            // If i < currentMonth, maybe we can simulate a lower number? 
-            // Or better: Just show the current global average for the current month only?
-            // "garis ke kanan bulan juga sama seperti grafik aktivitas" -> implies time series.
-            // Let's assume the progress is cumulative over time. 
-            // Without historical data, showing a flat line or just the end point is tricky.
-            // Let's TRY to find if we have any date info. 
-            // We have `workloadFeedbackDate`. We can use that.
-            
-            // Let's refine:
-            // Filter principals who have evidence.
-            // But evidence doesn't store date.
-            // Only `workloadFeedbackDate` stores last feedback.
-            // Fallback: Just show the current Accumulated Average for the current month.
-            // Previous months: We can't know for sure.
-            // Strategy: Show the line growing to the current global average at the current month.
-            // Intermediate months could be interpolated if we want a smooth line, or just 0 -> Current.
-            // User asked for "akumulasi".
-            
-            // Let's use a linear interpolation from 0 (Jan) to Current (Now) for visual effect if no data?
-            // No, that's fake.
-            // Better: Just plot the point for the current month.
-            // AND if we have data from `allVisits` or similar? No connection to KS docs.
-            
-            // BEST EFFORT: Show the Global Average ONLY at the current month index.
-            // 0 at start.
-            // Interpolation: 
-            // If i == currentMonthIndex, value = globalAvg.
-            // If i < currentMonthIndex, value = (globalAvg * (i + 1)) / (currentMonthIndex + 1); // Linear growth assumption
-            
-            progress = Math.round((globalAvg * (i + 1)) / (currentMonthIndex + 1));
-        }
-
-        ksProgressTrendData.push({
-            name: `${monthLabel}`,
-            progress: progress
-        });
-    }
-
-    return { schoolActivityData, monthlyData, schoolActivityTrendData, adminProgressData, ksProgressTrendData };
   }, [displayedSchools, allVisits, allSupervisions, schoolStatsMap, users]);
 
   const handleOpenManageModal = () => {
@@ -646,7 +718,9 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
           <div className="flex flex-col gap-3">
             {displayedSchools.map((school) => {
               const teacherCount = users.filter(u => normalize(u.school) === normalize(school.name) && u.role === 'guru').length;
-              const principal = users.find(u => normalize(u.school) === normalize(school.name) && u.role === 'kepala-sekolah');
+              
+              const principal = getBestPrincipal(users, school.name);
+
               const stats = getSchoolStats(school.name);
               
               // Hitung progress guru berdasarkan status supervisi
@@ -675,6 +749,9 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
 
               // Hitung progress KS
               let ksProgressPercent = 0;
+              let ksFilledCount = 0;
+              let ksTotalItems = 0;
+
               if (principal) {
                   const totalItems = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length;
                   const allIds = [
@@ -682,8 +759,12 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                       ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
                       ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
                   ];
-                  const filledCount = allIds.filter(id => principal.workloadEvidence_v2?.[id]).length;
+                  const evidence = principal.workloadEvidence_v2 || (principal as any).workloadEvidence || {};
+                  const filledCount = allIds.filter(id => evidence[id]).length;
                   ksProgressPercent = Math.round((filledCount / totalItems) * 100);
+                  
+                  ksFilledCount = filledCount;
+                  ksTotalItems = totalItems;
               }
 
               return (
@@ -724,6 +805,9 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                             </div>
                             <span className="font-medium text-purple-600 text-sm">{ksProgressPercent}%</span>
                         </div>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                            {principal ? `${ksFilledCount}/${ksTotalItems} Dokumen` : '-'}
+                        </p>
                      </div>
                   </div>
 
@@ -762,10 +846,12 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                   Kepala Sekolah
                 </h4>
                 <div className="space-y-2">
-                  {getSchoolUsers(selectedSchool).filter(u => u.role === 'kepala-sekolah').length > 0 ? (
-                    getSchoolUsers(selectedSchool)
-                      .filter(u => u.role === 'kepala-sekolah')
-                      .map(user => (
+                  {(() => {
+                    const bestPrincipal = getBestPrincipal(users, selectedSchool);
+                    const displayPrincipals = bestPrincipal ? [bestPrincipal] : [];
+
+                    return displayPrincipals.length > 0 ? (
+                      displayPrincipals.map(user => (
                         <div key={user.nip} className="flex flex-col gap-3 rounded-lg border border-purple-100 bg-purple-50 p-3">
                           <div className="flex items-center gap-3">
                               <div className="h-10 w-10 flex-shrink-0 rounded-full bg-purple-200 flex items-center justify-center text-purple-700 font-bold">
@@ -775,59 +861,117 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                                 <p className="font-medium text-purple-900">{user.name}</p>
                                 <p className="text-xs text-purple-600">NIP: {user.nip}</p>
                               </div>
-                              <span className="ml-auto text-xs rounded-full bg-green-100 px-2 py-1 text-green-700">
-                                Aktif
-                              </span>
+                              {user.active && (
+                                <span className="ml-auto text-xs rounded-full bg-green-100 px-2 py-1 text-green-700">
+                                  Aktif
+                                </span>
+                              )}
                           </div>
                           
                           {/* Progress Tugas Tambahan Kepala Sekolah */}
                           <div className="mt-1 border-t border-purple-100 pt-2">
                               {(() => {
-                                  const totalItems = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length; // 18
-                                  const allIds = [
-                                      ...MANAJERIAL_DOCS.map(d => d.id),
-                                      ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
-                                      ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
-                                  ];
-                                  const filledCount = allIds.filter(id => user.workloadEvidence_v2?.[id]).length;
-                                  const progressPercent = Math.round((filledCount / totalItems) * 100);
-                                  
-                                  // Score Calculation
-                                  let totalScore = 0;
-                                  let scoredCount = 0;
-                                  if (user.workloadScores_v2) {
-                                      Object.values(user.workloadScores_v2).forEach(score => {
-                                          totalScore += score;
-                                          scoredCount++;
-                                      });
-                                  }
-                                  const avgScore = totalScore / 18;
-                                  const category = avgScore <= 60 ? 'Perlu Perbaikan' : 
-                                                   avgScore <= 75 ? 'Cukup' : 
-                                                   avgScore <= 90 ? 'Baik' : 'Sangat Baik';
-                                  const categoryColor = avgScore <= 60 ? 'text-red-600' : 
-                                                        avgScore <= 75 ? 'text-yellow-600' : 
-                                                        avgScore <= 90 ? 'text-blue-600' : 'text-green-600';
+                                  try {
+                                      if (!MANAJERIAL_DOCS || !KEWIRAUSAHAAN_DOCS || !SUPERVISI_EVIDENCE_DOCS) {
+                                          return <p className="text-xs text-red-500">Error: Konfigurasi dokumen tidak ditemukan.</p>;
+                                      }
 
-                                  return (
-                                      <>
-                                          <div className="flex justify-between text-xs text-purple-800 mb-1">
-                                              <span>Progress Tugas Tambahan ({filledCount}/{totalItems})</span>
-                                              <span className="font-bold">{progressPercent}%</span>
-                                          </div>
-                                          <div className="h-1.5 w-full rounded-full bg-purple-200 mb-2">
-                                              <div className="h-1.5 rounded-full bg-purple-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
-                                          </div>
-                                          
-                                          <div className="flex justify-between items-center text-xs mb-2">
-                                              {scoredCount > 0 ? (
-                                                  <>
-                                                      <span className="text-gray-600">Nilai: <span className="font-bold">{avgScore.toFixed(1)}</span></span>
-                                                      <span className={`font-bold ${categoryColor}`}>{category}</span>
-                                                  </>
-                                              ) : (
-                                                  <span className="text-gray-400 italic">Belum dinilai</span>
-                                              )}
+                                      const totalItems = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length; // 18
+                                      const allIds = [
+                                          ...MANAJERIAL_DOCS.map(d => d.id),
+                                          ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
+                                          ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
+                                      ];
+                                      
+                                      // Fix: Merge v2 and legacy evidence
+                                      const evidence = { ...((user as any).workloadEvidence || {}), ...(user.workloadEvidence_v2 || {}) };
+                                      const filledCount = allIds.filter(id => evidence[id]).length;
+                                      const progressPercent = Math.round((filledCount / totalItems) * 100);
+                                      
+                                      // Score Calculation
+                                      let totalScore = 0;
+                                      let scoredCount = 0;
+                                      if (user.workloadScores_v2) {
+                                          Object.values(user.workloadScores_v2).forEach(score => {
+                                              totalScore += score;
+                                              scoredCount++;
+                                          });
+                                      }
+                                      const avgScore = totalScore > 0 ? totalScore / 18 : 0;
+                                      const category = avgScore <= 60 ? 'Perlu Perbaikan' : 
+                                                       avgScore <= 75 ? 'Cukup' : 
+                                                       avgScore <= 90 ? 'Baik' : 'Sangat Baik';
+                                      const categoryColor = avgScore <= 60 ? 'text-red-600' : 
+                                                            avgScore <= 75 ? 'text-yellow-600' : 
+                                                            avgScore <= 90 ? 'text-blue-600' : 'text-green-600';
+    
+                                      return (
+                                          <>
+                                              <div className="flex justify-between text-xs text-purple-800 mb-1">
+                                                  <span>Progress Tugas Tambahan ({filledCount}/{totalItems})</span>
+                                                  <span className="font-bold">{progressPercent}%</span>
+                                              </div>
+                                              <div className="h-1.5 w-full rounded-full bg-purple-200 mb-2">
+                                                  <div className="h-1.5 rounded-full bg-purple-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                                              </div>
+                                              
+                                              <div className="flex justify-between items-center text-xs mb-2">
+                                                  {scoredCount > 0 ? (
+                                                      <>
+                                                          <span className="text-gray-600">Nilai: <span className="font-bold">{avgScore.toFixed(1)}</span></span>
+                                                          <span className={`font-bold ${categoryColor}`}>{category}</span>
+                                                      </>
+                                                  ) : (
+                                                      <span className="text-gray-400 italic">Belum dinilai</span>
+                                                  )}
+                                              </div>
+                                          </>
+                                      );
+                                  } catch (err) {
+                                      console.error("Error calculating progress:", err);
+                                      return <p className="text-xs text-red-400">Gagal menghitung progress.</p>;
+                                  }
+                              })()}
+
+                                          {/* Daftar Link Bukti Fisik */}
+                                          <div className="mt-3 border-t border-purple-100 pt-3 mb-3">
+                                              <h5 className="text-xs font-bold text-purple-800 mb-2 flex items-center gap-1">
+                                                <ClipboardList size={12} />
+                                                Bukti Fisik Terunggah
+                                              </h5>
+                                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                                  {(() => {
+                                                       try {
+                                                           if (!MANAJERIAL_DOCS || !KEWIRAUSAHAAN_DOCS || !SUPERVISI_EVIDENCE_DOCS) {
+                                                               console.error("Docs constants are undefined");
+                                                               return <p className="text-xs text-red-500">Error loading docs configuration.</p>;
+                                                           }
+                                                           
+                                                           const allDocs = [...MANAJERIAL_DOCS, ...KEWIRAUSAHAAN_DOCS, ...SUPERVISI_EVIDENCE_DOCS];
+                                                           const evidence = { ...((user as any).workloadEvidence || {}), ...(user.workloadEvidence_v2 || {}) };
+                                                           const uploadedDocs = allDocs.filter(d => evidence[d.id]);
+                                                           
+                                                           if (uploadedDocs.length === 0) return <p className="text-xs text-gray-400 italic pl-1">Belum ada dokumen diunggah.</p>;
+
+                                                           return uploadedDocs.map(doc => (
+                                                               <div key={doc.id} className="flex items-center justify-between text-xs bg-white p-2 rounded border border-purple-100 hover:border-purple-300 transition-colors">
+                                                                   <span className="truncate flex-1 mr-2 text-gray-700 font-medium" title={doc.label}>{doc.label}</span>
+                                                                   <a 
+                                                                      href={evidence[doc.id]} 
+                                                                      target="_blank" 
+                                                                      rel="noopener noreferrer"
+                                                                      className="text-purple-600 hover:text-purple-800 bg-purple-50 hover:bg-purple-100 px-2 py-1 rounded flex-shrink-0 flex items-center gap-1 transition-colors"
+                                                                   >
+                                                                       Buka Link <ExternalLink size={10} />
+                                                                   </a>
+                                                               </div>
+                                                           ));
+                                                       } catch (err) {
+                                                           console.error("Error rendering uploaded docs:", err);
+                                                           return <p className="text-xs text-red-400">Gagal memuat dokumen.</p>;
+                                                       }
+                                                  })()}
+                                              </div>
                                           </div>
 
                                           <button
@@ -840,15 +984,13 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                                             <CheckSquare size={14} />
                                             Beri Penilaian Kinerja
                                           </button>
-                                      </>
-                                  );
-                              })()}
                           </div>
                         </div>
                       ))
                   ) : (
                     <p className="text-sm italic text-gray-400">Belum ada Kepala Sekolah terdaftar.</p>
-                  )}
+                  )
+                })()}
                 </div>
               </div>
 
@@ -863,13 +1005,12 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                     getSchoolUsers(selectedSchool)
                       .filter(u => u.role === 'guru')
                       .map(user => {
-                        // Ambil stats dari school_stats aggregation
-                        const stats = getSchoolStats(selectedSchool);
-                        let docCount = 0;
-                        if (stats && stats.teachers && stats.teachers[user.nip]) {
-                             docCount = stats.teachers[user.nip].docs || 0;
-                        }
-                        const totalDocs = 22; // Asumsi
+                        // Calculate progress from real-time docs
+                        const teacherDocs = selectedSchoolDocs.filter(d => d.teacherNip === user.nip);
+                        // Count unique doc types
+                        const uniqueDocTypes = new Set(teacherDocs.map(d => d.docType));
+                        const docCount = uniqueDocTypes.size;
+                        const totalDocs = ADMIN_DOCS.length;
                         const percent = Math.min(100, Math.round((docCount / totalDocs) * 100));
 
                         return (
@@ -879,25 +1020,18 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                                   {user.name.charAt(0)}
                                 </div>
                                 <div className="flex-1">
-                                  <p className="font-medium text-gray-800">{user.name}</p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                      <div className="h-1.5 w-24 rounded-full bg-gray-200">
-                                          <div 
-                                              className={`h-1.5 rounded-full ${percent >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} 
-                                              style={{ width: `${percent}%` }} 
-                                          />
-                                      </div>
-                                      <span className="text-xs text-gray-500">{docCount}/{totalDocs} Docs</span>
-                                  </div>
+                                  <p className="font-medium text-gray-900">{user.name}</p>
+                                  <p className="text-xs text-gray-500">NIP: {user.nip}</p>
                                 </div>
-                                <div className="flex flex-col items-end gap-1">
-                                  <span className={`text-xs px-2 py-1 rounded-full ${
-                                    percent >= 100 
-                                      ? 'bg-green-100 text-green-700' 
-                                      : 'bg-yellow-100 text-yellow-700'
-                                  }`}>
-                                    {percent >= 100 ? 'Selesai' : 'Proses'}
-                                  </span>
+                                <span className="text-xs font-bold text-blue-600">{percent}%</span>
+                            </div>
+
+                            <div className="mt-1">
+                                <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+                                    <span>Kelengkapan Administrasi ({docCount}/{totalDocs})</span>
+                                </div>
+                                <div className="h-1.5 w-full rounded-full bg-gray-100">
+                                    <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
                                 </div>
                             </div>
 
@@ -1144,15 +1278,19 @@ const PengawasPenilaian = ({ users, currentUser }: PengawasPenilaianProps) => {
     }
   }, [schoolsData, currentUser]);
 
+  // Keep activeAssessmentPrincipal in sync with real-time users
+  useEffect(() => {
+    if (activeAssessmentPrincipal) {
+       const updated = users.find(u => u.nip === activeAssessmentPrincipal.nip);
+       if (updated) {
+          setActiveAssessmentPrincipal(updated);
+       }
+    }
+  }, [users, activeAssessmentPrincipal?.nip]);
+
   const handleOpenAssessment = (principal: User) => {
     setActiveAssessmentPrincipal(principal);
     setIsAssessmentModalOpen(true);
-  };
-
-  const normalize = (str: string | undefined | null) => str?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
-
-  const getPrincipal = (schoolName: string) => {
-    return users.find(u => normalize(u.school) === normalize(schoolName) && u.role === 'kepala-sekolah');
   };
 
   const calculateScore = (user: User) => {
@@ -1187,21 +1325,21 @@ const PengawasPenilaian = ({ users, currentUser }: PengawasPenilaianProps) => {
             <tbody className="divide-y">
               {managedSchools.length > 0 ? (
                 managedSchools.map((school) => {
-                  const principal = getPrincipal(school.name);
+                  const principal = getBestPrincipal(users, school.name);
                   const score = principal ? calculateScore(principal) : 0;
                   
                   // Calculate evidence progress
                   let evidenceCount = 0;
                   const totalItems = 18;
-                  if (principal?.workloadEvidence_v2) {
-                     // Need to count based on actual required docs IDs
-                     const allIds = [
-                        ...MANAJERIAL_DOCS.map(d => d.id),
-                        ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
-                        ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
-                     ];
-                     evidenceCount = allIds.filter(id => principal.workloadEvidence_v2?.[id]).length;
-                  }
+                  const evidence = { ...((principal as any).workloadEvidence || {}), ...(principal?.workloadEvidence_v2 || {}) };
+                  
+                  // Need to count based on actual required docs IDs
+                  const allIds = [
+                     ...MANAJERIAL_DOCS.map(d => d.id),
+                     ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
+                     ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
+                  ];
+                  evidenceCount = allIds.filter(id => evidence[id]).length;
                   const evidencePercent = Math.round((evidenceCount / totalItems) * 100);
 
                   return (
@@ -1558,17 +1696,45 @@ const PengawasDashboard = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  const handleRefresh = async () => {
+      setIsRefreshing(true);
+      setConnectionError(null);
+      try {
+          // Re-fetch users manually using normalized fetch
+          const fetchedUsers = await supabaseService.getAllUsers();
+          setUsers(fetchedUsers);
+          
+          // Note: School stats are subscribed in child component, no need to refresh here or pass trigger
+          // If we really needed to refresh stats, we would need to lift state up.
+      } catch (e) {
+          console.error("Refresh failed", e);
+          setConnectionError("Gagal memuat ulang data. Periksa koneksi internet Anda.");
+      } finally {
+          setIsRefreshing(false);
+      }
+  };
+
   useEffect(() => {
     const localUser = storageService.getCurrentUser();
     setCurrentUser(localUser);
 
-    const unsub = supabaseService.subscribeUsers((fetchedUsers) => {
-      setUsers(fetchedUsers);
-      if (localUser) {
-        const found = fetchedUsers.find(u => u.nip === localUser.nip);
-        if (found) setCurrentUser(found);
+    const unsub = supabaseService.subscribeUsers(
+      (fetchedUsers) => {
+        setUsers(fetchedUsers);
+        setConnectionError(null);
+        if (localUser) {
+          const found = fetchedUsers.find(u => u.nip === localUser.nip);
+          if (found) setCurrentUser(found);
+        }
+      },
+      (error) => {
+        console.error("Real-time connection error:", error);
+        setConnectionError("Terputus dari server. Data mungkin tidak mutakhir.");
       }
-    });
+    );
     return () => unsub();
   }, []);
 
@@ -1599,25 +1765,55 @@ const PengawasDashboard = () => {
       </aside>
       <main className="flex-1 p-8">
         <RunningText />
+        
+        {connectionError && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+            <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+            <p className="text-sm font-medium">{connectionError}</p>
+            <button 
+              onClick={handleRefresh}
+              className="ml-auto text-xs font-bold underline hover:text-red-800"
+            >
+              Coba Lagi
+            </button>
+          </div>
+        )}
+
         <header className="mb-8 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-800">
             {location.pathname === '/pengawas' ? 'Ringkasan' : 
              location.pathname === '/pengawas/penilaian' ? 'Penilaian' :
              location.pathname === '/pengawas/kunjungan' ? 'Kunjungan Sekolah' : 'Dashboard'}
           </h1>
-          <div className="text-gray-600">Selamat datang, Pengawas</div>
+          <div className="flex items-center gap-3">
+             <button 
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition"
+             >
+                <div className={`${isRefreshing ? 'animate-spin' : ''}`}>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                </div>
+                {isRefreshing ? 'Memuat...' : 'Refresh Data'}
+             </button>
+             <div className="text-gray-600">Selamat datang, Pengawas</div>
+          </div>
         </header>
 
         <div className="mb-6 max-w-md">
-          <GoogleSyncWidget user={currentUser} />
+          <ErrorBoundary>
+            <GoogleSyncWidget user={currentUser} />
+          </ErrorBoundary>
         </div>
 
         <div className="rounded-lg bg-white p-6 shadow-sm">
-          <Routes>
-            <Route path="/" element={<PengawasHome users={users} currentUser={currentUser} />} />
-            <Route path="/penilaian" element={<PengawasPenilaian users={users} currentUser={currentUser} />} />
-            <Route path="/kunjungan" element={<PengawasKunjungan currentUser={currentUser} />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<PengawasHome users={users} currentUser={currentUser} />} />
+              <Route path="/penilaian" element={<PengawasPenilaian users={users} currentUser={currentUser} />} />
+              <Route path="/kunjungan" element={<PengawasKunjungan currentUser={currentUser} />} />
+            </Routes>
+          </ErrorBoundary>
         </div>
       </main>
     </div>

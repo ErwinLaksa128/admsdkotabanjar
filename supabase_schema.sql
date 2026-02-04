@@ -14,6 +14,16 @@ CREATE TABLE IF NOT EXISTS users (
   "workloadEvidence_v2" JSONB, -- Stores the record of evidence IDs
   "workloadScores_v2" JSONB, -- Stores the scores
   "lastSeen" TIMESTAMPTZ,
+  active BOOLEAN DEFAULT true,
+  "isPremium" BOOLEAN DEFAULT false,
+  "subRole" TEXT,
+  pangkat TEXT,
+  jabatan TEXT,
+  "wilayahBinaan" TEXT,
+  "kepsekName" TEXT,
+  "kepsekNip" TEXT,
+  "pengawasName" TEXT,
+  "pengawasNip" TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -54,11 +64,19 @@ CREATE TABLE IF NOT EXISTS school_visits (
   "createdAt" TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. SCHOOL STATS TABLE (Aggregation)
--- This might need to be updated via triggers or scheduled functions, 
--- but for now we'll create the table to store the aggregated state.
+-- 4. SCHOOL STATS TABLE (Aggregation and Static Info)
+-- This stores both static info (address, npsn) and aggregated stats (teachers list)
 CREATE TABLE IF NOT EXISTS school_stats (
   "schoolName" TEXT PRIMARY KEY,
+  npsn TEXT,
+  address TEXT,
+  village TEXT,
+  district TEXT,
+  status TEXT,
+  "guruCount" INTEGER,
+  "tasCount" INTEGER,
+  "pengawasNip" TEXT,
+  "pengawasName" TEXT,
   teachers JSONB, -- Stores teacher stats object
   "totalDocs" INTEGER DEFAULT 0,
   updated_at TIMESTAMPTZ DEFAULT NOW()

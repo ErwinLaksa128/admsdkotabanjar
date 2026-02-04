@@ -9,6 +9,7 @@ import KepalaSekolahDashboard from './pages/KepalaSekolahDashboard';
 import PengawasDashboard from './pages/PengawasDashboard';
 import DinasDashboard from './pages/DinasDashboard';
 import UserSync from './components/UserSync';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -18,21 +19,23 @@ function App() {
   }
 
   return (
-    <Router>
-      <UserSync />
-      <div className="min-h-screen bg-gray-100">
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/guru/*" element={<GuruDashboard />} />
-          <Route path="/kepala-sekolah/*" element={<KepalaSekolahDashboard />} />
-          <Route path="/pengawas/*" element={<PengawasDashboard />} />
-          <Route path="/dinas/*" element={<DinasDashboard />} />
-        </Routes>
-      </div>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <UserSync />
+        <div className="min-h-screen bg-gray-100">
+          <Routes>
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/admin/*" element={<AdminDashboard />} />
+            <Route path="/guru/*" element={<GuruDashboard />} />
+            <Route path="/kepala-sekolah/*" element={<KepalaSekolahDashboard />} />
+            <Route path="/pengawas/*" element={<PengawasDashboard />} />
+            <Route path="/dinas/*" element={<DinasDashboard />} />
+          </Routes>
+        </div>
+      </Router>
+    </ErrorBoundary>
   );
 }
 

@@ -1,10 +1,6 @@
 import { useEffect } from 'react';
 import { supabaseService } from '../services/supabaseService';
-import { storageService } from '../services/storage';
-
-const STORAGE_KEYS = {
-  USERS: 'app_users',
-};
+import { storageService, STORAGE_KEYS } from '../services/storage';
 
 const UserSync = () => {
   useEffect(() => {

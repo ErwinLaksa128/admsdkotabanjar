@@ -40,7 +40,7 @@ const AdminDashboard = () => {
             className={`flex items-center gap-3 rounded-md px-4 py-3 transition hover:bg-blue-700 ${isActive('/admin/settings')}`}
           >
             <Settings size={20} />
-            Pengaturan
+            Running Teks
           </Link>
           <Link
             to="/admin/upload"
@@ -66,7 +66,7 @@ const AdminDashboard = () => {
           <h1 className="text-2xl font-bold text-gray-800">
             {location.pathname === '/admin' ? 'Dashboard Overview' : 
              location.pathname === '/admin/users' ? 'Manajemen User' : 
-             location.pathname === '/admin/upload' ? 'Upload Data Backup' : 'Pengaturan Sistem'}
+             location.pathname === '/admin/upload' ? 'Upload Data Backup' : 'Running Teks'}
           </h1>
           <div className="text-gray-600">Selamat datang, Admin</div>
         </header>
@@ -173,6 +173,7 @@ const AdminUsers = () => {
   const [newUser, setNewUser] = useState<User>({ nip: '', name: '', role: 'guru', active: true, isPremium: false });
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false); // Mode edit
+  const [isSaving, setIsSaving] = useState(false);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     let unsubscribeUsers: (() => void) | undefined;
@@ -205,6 +206,7 @@ const AdminUsers = () => {
     e.preventDefault();
     if (!newUser.nip || !newUser.name) return;
     
+    setIsSaving(true);
     // Simpan langsung ke Supabase
     try {
       await supabaseService.saveUser(newUser);
@@ -215,18 +217,23 @@ const AdminUsers = () => {
     } catch (error) {
       alert('Gagal menyimpan user ke server');
       console.error(error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const togglePremium = async (user: User) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
-      await supabaseService.saveUser({
-        ...user,
-        isPremium: !user.isPremium
-      });
+      // Gunakan fungsi khusus update status premium agar lebih aman
+      // dan menghindari masalah case-sensitivity kolom (isPremium vs ispremium)
+      await supabaseService.updateUserPremium(user.nip, !user.isPremium);
     } catch (error) {
       alert('Gagal mengubah status premium');
       console.error(error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -239,12 +246,16 @@ const AdminUsers = () => {
   };
 
   const handleDelete = async (nip: string) => {
+    if (isSaving) return;
     if (window.confirm('Yakin ingin menghapus user ini?')) {
+      setIsSaving(true);
       try {
         await supabaseService.deleteUser(nip);
       } catch (error) {
         alert('Gagal menghapus user dari server');
         console.error(error);
+      } finally {
+        setIsSaving(false);
       }
     }
   };
@@ -347,9 +358,9 @@ const AdminUsers = () => {
             </div>
           </div>
           <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={handleCancel} className="rounded px-4 py-2 hover:bg-gray-200">Batal</button>
-            <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
-              {isEditing ? 'Update User' : 'Simpan User'}
+            <button type="button" onClick={handleCancel} disabled={isSaving} className="rounded px-4 py-2 hover:bg-gray-200">Batal</button>
+            <button type="submit" disabled={isSaving} className={`rounded px-4 py-2 text-white ${isSaving ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+              {isSaving ? 'Menyimpan...' : (isEditing ? 'Update User' : 'Simpan User')}
             </button>
           </div>
         </form>
@@ -400,11 +411,12 @@ const AdminUsers = () => {
                   <td className="px-6 py-4">
                     <button
                       onClick={() => togglePremium(user)}
+                      disabled={isSaving}
                       className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
                         user.isPremium 
                           ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' 
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
+                      } ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       {user.isPremium ? (
                         <>
@@ -424,14 +436,16 @@ const AdminUsers = () => {
                     <div className="flex gap-2">
                       <button 
                         onClick={() => handleEdit(user)}
-                        className="text-blue-600 hover:text-blue-800"
+                        disabled={isSaving}
+                        className={`text-blue-600 hover:text-blue-800 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
                         title="Edit"
                       >
                         <Pencil size={18} />
                       </button>
                       <button 
                         onClick={() => handleDelete(user.nip)}
-                        className="text-red-600 hover:text-red-800"
+                        disabled={isSaving}
+                        className={`text-red-600 hover:text-red-800 ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
                         title="Hapus"
                       >
                         <Trash2 size={18} />
@@ -491,7 +505,7 @@ const AdminSettings = () => {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold">Pengaturan Sistem (Mode Online)</h2>
+      <h2 className="mb-4 text-lg font-semibold">Running Teks</h2>
       
       <div className="mb-6">
         <label className="mb-2 block font-medium">Running Text (Teks Berjalan)</label>
