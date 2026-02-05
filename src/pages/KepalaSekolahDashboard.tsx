@@ -1691,31 +1691,41 @@ export const KSPlanningDeepForm = () => {
 
 const KSDashboardHome = () => {
   const [teachers, setTeachers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [teacherScores, setTeacherScores] = useState<Record<string, { planning?: number, implementation?: number, administration?: number }>>({});
   const [generatedStats, setGeneratedStats] = useState<Record<string, number>>({});
   const [visits, setVisits] = useState<SchoolVisit[]>([]);
 
   useEffect(() => {
-    const currentUser = storageService.getCurrentUser();
+    const user = storageService.getCurrentUser();
+    setCurrentUser(user);
     const allUsers = storageService.getUsers();
-    if (currentUser && currentUser.school) {
+    
+    if (user && user.school) {
       const schoolTeachers = allUsers.filter(u => 
         u.role === 'guru' && 
         u.active && 
-        u.school?.trim().toLowerCase() === currentUser.school?.trim().toLowerCase()
+        u.school?.trim().toLowerCase() === user.school?.trim().toLowerCase()
       );
       setTeachers(schoolTeachers);
 
       const unsubscribeUsers = supabaseService.subscribeUsers((users) => {
+        // Update teachers list
         const filtered = users.filter(u => 
           u.role === 'guru' && 
           u.active && 
-          u.school?.trim().toLowerCase() === currentUser.school?.trim().toLowerCase()
+          u.school?.trim().toLowerCase() === user.school?.trim().toLowerCase()
         );
         setTeachers(filtered);
+
+        // Update current user data (for PKKS score)
+        const found = users.find(u => u.nip === user.nip);
+        if (found) {
+            setCurrentUser(found);
+        }
       });
 
-      const unsubscribeSup = supabaseService.subscribeSupervisionsBySchool(currentUser.school, (reports) => {
+      const unsubscribeSup = supabaseService.subscribeSupervisionsBySchool(user.school, (reports) => {
         // Process reports to find latest scores for each teacher
         const scores: Record<string, { planning?: number, implementation?: number, administration?: number }> = {};
         
@@ -1743,7 +1753,7 @@ const KSDashboardHome = () => {
         setTeacherScores(scores);
       });
 
-      const unsubscribeStats = supabaseService.subscribeGeneratedDocsBySchool(currentUser.school?.trim(), (logs) => {
+      const unsubscribeStats = supabaseService.subscribeGeneratedDocsBySchool(user.school?.trim(), (logs) => {
          const stats: Record<string, number> = {};
          const teacherDocs: Record<string, Set<string>> = {};
 
@@ -1769,9 +1779,9 @@ const KSDashboardHome = () => {
       // Normalize school name for subscription to ensure matches with Pengawas input
       const allSchools = storageService.getSchools();
       const normalizedSchool = allSchools.find(s => 
-          s.name.toLowerCase().trim() === currentUser.school?.toLowerCase().trim()
+          s.name.toLowerCase().trim() === user.school?.toLowerCase().trim()
       );
-      const schoolNameForQuery = normalizedSchool ? normalizedSchool.name : currentUser.school;
+      const schoolNameForQuery = normalizedSchool ? normalizedSchool.name : user.school;
 
       const unsubscribeVisits = supabaseService.subscribeSchoolVisits(schoolNameForQuery, (data) => {
         setVisits(data);
@@ -1786,8 +1796,51 @@ const KSDashboardHome = () => {
     }
   }, []);
 
+  const getScoreDetails = (val?: number) => {
+      if (val === undefined) return { label: '', color: 'text-gray-400' };
+      if (val > 90) return { label: 'Sangat Baik', color: 'text-green-600' };
+      if (val > 75) return { label: 'Baik', color: 'text-blue-600' };
+      if (val > 60) return { label: 'Cukup', color: 'text-yellow-600' };
+      return { label: 'Perlu Pembinaan', color: 'text-red-600' };
+  };
+
+  const calculatePkksScore = () => {
+      if (!currentUser || !currentUser.workloadScores_v2) return 0;
+      const totalScore = Object.values(currentUser.workloadScores_v2).reduce((a, b) => a + b, 0);
+      return (totalScore / 18).toFixed(1);
+  };
+
+  const pkksScore = Number(calculatePkksScore());
+  const pkksDetails = getScoreDetails(pkksScore);
+
   return (
     <div className="space-y-6">
+      {/* PKKS Score Card */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <CheckSquare className="h-5 w-5 text-purple-600" />
+            Penilaian Kinerja Kepala Sekolah (PKKS)
+        </h3>
+        <div className="flex items-center gap-4 bg-purple-50 p-4 rounded-lg border border-purple-100">
+            <div className="p-3 bg-white rounded-full shadow-sm">
+                <CheckSquare className="h-8 w-8 text-purple-600" />
+            </div>
+            <div>
+                <div className="text-sm text-gray-600 mb-1">Nilai Kinerja Anda</div>
+                <div className="flex items-baseline gap-3">
+                    <span className={`text-3xl font-bold ${pkksDetails.color}`}>{pkksScore > 0 ? pkksScore.toFixed(1) : '-'}</span>
+                    {pkksScore > 0 ? (
+                        <span className={`px-2 py-0.5 rounded text-sm font-medium ${pkksDetails.color.replace('text-', 'bg-').replace('600', '100')} ${pkksDetails.color}`}>
+                            {pkksDetails.label}
+                        </span>
+                    ) : (
+                        <span className="text-sm text-gray-400 italic">Belum dinilai</span>
+                    )}
+                </div>
+            </div>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold">Kunjungan Pengawas</h3>

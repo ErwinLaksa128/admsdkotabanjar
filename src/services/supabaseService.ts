@@ -26,15 +26,31 @@ const parseJsonIfNeeded = (val: any): any => {
   return val || {};
 };
 
-const normalizeUser = (u: any): User => ({
-  ...u,
-  // Handle potential case sensitivity issues for isPremium
-  isPremium: u.isPremium !== undefined ? u.isPremium : (u.ispremium !== undefined ? u.ispremium : false),
-  workloadEvidence_v2: parseJsonIfNeeded(u.workloadEvidence_v2 || u.workloadevidence_v2),
-  workloadScores_v2: parseJsonIfNeeded(u.workloadScores_v2 || u.workloadscores_v2),
-  workloadFeedback_v2: u.workloadFeedback_v2 || u.workloadfeedback_v2 || '',
-  workloadFeedbackDate_v2: u.workloadFeedbackDate_v2 || u.workloadfeedbackdate_v2 || ''
-});
+const normalizeUser = (u: any): User => {
+  let scores = parseJsonIfNeeded(u.workloadScores_v2 || u.workloadscores_v2);
+  
+  // Extract feedback from scores if available (fallback strategy since column is missing)
+  const feedback = u.workloadFeedback_v2 || u.workloadfeedback_v2 || scores?._feedback || '';
+  const feedbackDate = u.workloadFeedbackDate_v2 || u.workloadfeedbackdate_v2 || scores?._feedbackDate || '';
+
+  // Clean up scores to ensure it only contains numbers (remove hidden fields)
+  if (scores && (scores._feedback || scores._feedbackDate)) {
+      const cleanScores = { ...scores };
+      delete cleanScores._feedback;
+      delete cleanScores._feedbackDate;
+      scores = cleanScores;
+  }
+  
+  return {
+    ...u,
+    // Handle potential case sensitivity issues for isPremium
+    isPremium: u.isPremium !== undefined ? u.isPremium : (u.ispremium !== undefined ? u.ispremium : false),
+    workloadEvidence_v2: parseJsonIfNeeded(u.workloadEvidence_v2 || u.workloadevidence_v2),
+    workloadScores_v2: scores,
+    workloadFeedback_v2: feedback,
+    workloadFeedbackDate_v2: feedbackDate
+  };
+};
 
 // Helper for Robust Subscription with Retry
 const subscribeWithRetry = (
@@ -250,9 +266,28 @@ export const supabaseService = {
         delete (sanitizedUser as any).ispremium;
     }
 
+    // PACKING STRATEGY:
+    // Since 'workloadFeedback_v2' and 'workloadFeedbackDate_v2' columns are missing in the DB,
+    // we pack them into 'workloadScores_v2' (JSONB) before saving.
+    if (sanitizedUser.workloadFeedback_v2 || sanitizedUser.workloadFeedbackDate_v2) {
+        sanitizedUser.workloadScores_v2 = {
+            ...(sanitizedUser.workloadScores_v2 || {}),
+            _feedback: sanitizedUser.workloadFeedback_v2,
+            _feedbackDate: sanitizedUser.workloadFeedbackDate_v2
+        } as any;
+    }
+
+    // Remove the virtual fields so Supabase doesn't complain about missing columns
+    // We use a robust filtering approach to ensure these keys are definitely gone
+    const payload = { ...sanitizedUser };
+    delete (payload as any).workloadFeedback_v2;
+    delete (payload as any).workloadFeedbackDate_v2;
+    delete (payload as any).workloadfeedback_v2; // Handle potential lowercase
+    delete (payload as any).workloadfeedbackdate_v2; // Handle potential lowercase
+
     const { error } = await supabase
       .from(USERS_TABLE)
-      .upsert(sanitizedUser, { onConflict: 'nip' });
+      .upsert(payload, { onConflict: 'nip' });
     
     if (error) throw error;
     return true;

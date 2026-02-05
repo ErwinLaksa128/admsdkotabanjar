@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Cloud, Upload, Download, AlertCircle, Loader2 } from 'lucide-react';
-import { googleDriveService, GOOGLE_CONFIG } from '../services/googleDrive';
+import { googleDriveService } from '../services/googleDrive';
 import { User } from '../services/storage';
 
 interface GoogleSyncWidgetProps {

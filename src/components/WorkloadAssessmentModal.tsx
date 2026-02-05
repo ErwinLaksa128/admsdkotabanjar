@@ -19,35 +19,64 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
   onSave,
   onViewSupervision
 }) => {
+  const [localPrincipal, setLocalPrincipal] = useState<User>(principal);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [feedback, setFeedback] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Sync local principal with prop when it changes
+  useEffect(() => {
+    setLocalPrincipal(principal);
+  }, [principal]);
 
   useEffect(() => {
     if (isOpen && principal) {
       setScores(principal.workloadScores_v2 || {});
       setFeedback(principal.workloadFeedback_v2 || '');
+      
+      // Fetch latest data to ensure evidence is up to date
+      fetchLatestData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]); // Only run on open to prevent overwriting inputs when principal updates (e.g. evidence uploaded)
+  }, [isOpen, principal.nip]);
+
+  const fetchLatestData = async () => {
+      setIsLoading(true);
+      try {
+          const latest = await supabaseService.getUserByNip(principal.nip);
+          if (latest) {
+              setLocalPrincipal(latest);
+              // Also update scores if they were updated elsewhere
+              // setScores(latest.workloadScores_v2 || {}); 
+              // Don't overwrite scores if we are editing? 
+              // Actually, for assessment, we probably want to see latest saved scores unless we have dirty state.
+              // For now, let's just update evidence via localPrincipal.
+          }
+      } catch (err) {
+          console.error("Failed to fetch latest principal data", err);
+      } finally {
+          setIsLoading(false);
+      }
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
       const updatedUser = {
-        ...principal,
+        ...localPrincipal,
         workloadScores_v2: scores,
         workloadFeedback_v2: feedback,
         workloadFeedbackDate_v2: new Date().toISOString()
       };
-      
-      console.log('Saving assessment for user:', principal.nip, updatedUser);
+
       await supabaseService.saveUser(updatedUser);
-      onSave();
+      onSave(); // Notify parent to refresh
       onClose();
-    } catch (error: any) {
-      console.error("Failed to save assessment", error);
-      alert(`Gagal menyimpan penilaian: ${error.message || 'Unknown error'}`);
+      alert('Penilaian berhasil disimpan!');
+    } catch (error) {
+      console.error('Failed to save assessment:', error);
+      alert('Gagal menyimpan penilaian.');
     } finally {
       setIsSaving(false);
     }
@@ -61,10 +90,10 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
     return (totalScore / totalItems).toFixed(1);
   };
 
-  // Calculate merged evidence once
+  // Calculate merged evidence from localPrincipal (latest data)
   const mergedEvidence = {
-    ...((principal as any).workloadEvidence || {}),
-    ...(principal.workloadEvidence_v2 || {})
+    ...((localPrincipal as any).workloadEvidence || {}),
+    ...(localPrincipal.workloadEvidence_v2 || {})
   };
 
   return (
@@ -76,11 +105,21 @@ const WorkloadAssessmentModal: React.FC<WorkloadAssessmentModalProps> = ({
               <CheckSquare className="h-5 w-5" />
               Penilaian Beban Kerja Kepala Sekolah
             </h3>
-            <p className="text-sm text-purple-700">{principal.name} - {principal.school}</p>
+            <p className="text-sm text-purple-700">{localPrincipal.name} - {localPrincipal.school}</p>
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-white/50 transition">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+             <button 
+                onClick={fetchLatestData} 
+                className="p-2 text-purple-600 hover:bg-purple-100 rounded-full transition" 
+                title="Refresh Data"
+                disabled={isLoading}
+             >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`lucide lucide-refresh-cw ${isLoading ? 'animate-spin' : ''}`}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+             </button>
+             <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-white/50 transition">
+                <X className="h-5 w-5" />
+             </button>
+          </div>
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto space-y-6">
