@@ -91,7 +91,7 @@ export const KSPlanningDeepList = () => {
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-800">{teacher.name}</h3>
-                  <p className="text-sm text-gray-500">NIP: {teacher.nip}</p>
+                  <p className="text-sm text-gray-500">NIP: {teacher.nip} • {teacher.subRole || 'Guru Mapel'}</p>
                 </div>
               </div>
 
@@ -206,7 +206,7 @@ export const KSPelaksanaanList = () => {
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-800">{teacher.name}</h3>
-                  <p className="text-sm text-gray-500">NIP: {teacher.nip}</p>
+                  <p className="text-sm text-gray-500">NIP: {teacher.nip} • {teacher.subRole || 'Guru Mapel'}</p>
                 </div>
               </div>
               <div className="text-right">

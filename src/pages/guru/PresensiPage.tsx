@@ -6,6 +6,8 @@ import { storageService } from '../../services/storage';
 import { studentService, Student } from '../../services/studentService';
 import { attendanceService, AttendanceRecord } from '../../services/attendanceService';
 import { getMateriByClass } from '../../data/materiPjok';
+import { getMateriPaibpByClass } from '../../data/materiPaibp';
+import { supabaseService } from '../../services/supabaseService';
 
 const PresensiPage = () => {
   const navigate = useNavigate();
@@ -67,10 +69,12 @@ const PresensiPage = () => {
   useEffect(() => {
     if (selectedClass) {
       if (isMapelTeacher) {
-        // Load Materi if PJOK
+        // Load Materi if PJOK or PAIBP
         const currentUser = storageService.getCurrentUser();
         if (currentUser?.subRole?.includes('PJOK')) {
           setAvailableMateri(getMateriByClass(selectedClass));
+        } else if (currentUser?.subRole?.includes('PAIBP')) {
+          setAvailableMateri(getMateriPaibpByClass(selectedClass));
         }
       }
       loadStudentsAndAttendance();

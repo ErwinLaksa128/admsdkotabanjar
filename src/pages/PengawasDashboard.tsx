@@ -1059,7 +1059,7 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                                 </div>
                                 <div className="flex-1">
                                   <p className="font-medium text-gray-900">{user.name}</p>
-                                  <p className="text-xs text-gray-500">NIP: {user.nip}</p>
+                                  <p className="text-xs text-gray-500">NIP: {user.nip} • {user.subRole || 'Guru Mapel'}</p>
                                 </div>
                                 <span className="text-xs font-bold text-blue-600">{percent}%</span>
                             </div>
