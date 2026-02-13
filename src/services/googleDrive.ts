@@ -4,8 +4,11 @@
 import { STORAGE_KEYS } from './storage';
 
 export const GOOGLE_CONFIG = {
-  CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID, // Masukkan Client ID Anda di sini
-  API_KEY: import.meta.env.VITE_GOOGLE_API_KEY,   // Masukkan API Key Anda di sini
+  // Menggunakan hardcoded credentials sesuai instruksi user untuk memastikan build Netlify menggunakan ID yang benar
+  // (Mengabaikan environment variable yang mungkin masih menyimpan ID lama/terhapus)
+  CLIENT_ID: '516566514996-jcu3l4o4th066r67rhs7flvv1bc3tpao.apps.googleusercontent.com',
+  API_KEY: 'AIzaSyAw0prh7e3fnbUTYUWqNzhoPpHUV9seGUg', 
+  
   // Discovery doc URL for APIs used by the quickstart
   DISCOVERY_DOC: 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
   // Authorization scopes required by the API; multiple scopes can be

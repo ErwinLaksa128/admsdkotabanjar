@@ -38,18 +38,11 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
   };
 
   const isProduction = import.meta.env.PROD;
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-  const missingKeys = !import.meta.env.VITE_GOOGLE_CLIENT_ID || !import.meta.env.VITE_GOOGLE_API_KEY;
+  const clientId = googleDriveService.isMock ? 'MOCK' : '516566514996...';
+  const missingKeys = false; // Hardcoded keys are now present in service
 
   useEffect(() => {
-    // In Production, if keys are missing, we don't enable "Configured" state to force the alert.
-    // In Dev, we allow it for Mock Mode.
-    if (missingKeys && isProduction) {
-        setIsConfigured(false);
-        return;
-    }
-
-    // We allow initialization even without keys now (Mock Mode) - but only in DEV or if keys exist
+    // Always configured now since we have hardcoded keys
     setIsConfigured(true);
       
     // Set a timeout to detect if Google scripts fail to load
