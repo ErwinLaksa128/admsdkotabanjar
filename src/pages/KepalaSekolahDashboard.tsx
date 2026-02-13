@@ -257,30 +257,45 @@ export const KSPelaksanaanForm = () => {
   const [grade, setGrade] = useState('');
 
   useEffect(() => {
-    const allUsers = storageService.getUsers();
-    const t = allUsers.find(u => u.nip === nip);
-    if (t) setTeacher(t);
-
-    const curr = storageService.getCurrentUser();
-    if (curr) setCurrentUser(curr);
-
-    if (nip) {
-      const existing = storageService.getSupervisions(nip);
-      const observations = existing.filter((s: SupervisionReport) => s.type === 'observation');
-      if (observations.length > 0) {
-        const last = observations[observations.length - 1];
-        setDate(last.date);
-        setSemester(last.semester);
-        setYear(last.year);
-        setScores(last.scores);
-        if (last.notes?.umum) setNotes(last.notes.umum);
-        if (last.notes?.pelaksanaan) setObservation(last.notes.pelaksanaan);
-        if (last.conclusion) setConclusion(last.conclusion);
-        if (last.subject) setSubject(last.subject);
-        if (last.topic) setMateri(last.topic);
-        if (last.grade) setGrade(last.grade);
+    const loadData = async () => {
+      // Load Teacher (Local first, then Remote)
+      const allUsers = storageService.getUsers();
+      let t = allUsers.find(u => u.nip === nip);
+      
+      if (!t && nip) {
+        try {
+          const remoteUser = await supabaseService.getUserByNip(nip);
+          if (remoteUser) t = remoteUser;
+        } catch (e) {
+          console.error('Failed to fetch teacher:', e);
+        }
       }
-    }
+      
+      if (t) setTeacher(t);
+
+      const curr = storageService.getCurrentUser();
+      if (curr) setCurrentUser(curr);
+
+      if (nip) {
+        const existing = storageService.getSupervisions(nip);
+        const observations = existing.filter((s: SupervisionReport) => s.type === 'observation');
+        if (observations.length > 0) {
+          const last = observations[observations.length - 1];
+          setDate(last.date);
+          setSemester(last.semester);
+          setYear(last.year);
+          setScores(last.scores);
+          if (last.notes?.umum) setNotes(last.notes.umum);
+          if (last.notes?.pelaksanaan) setObservation(last.notes.pelaksanaan);
+          if (last.conclusion) setConclusion(last.conclusion);
+          if (last.subject) setSubject(last.subject);
+          if (last.topic) setMateri(last.topic);
+          if (last.grade) setGrade(last.grade);
+        }
+      }
+    };
+    
+    loadData();
   }, [nip]);
 
   const handleScoreChange = (id: string, score: number) => {
@@ -809,40 +824,55 @@ export const KSReportForm = () => {
   const [followUp, setFollowUp] = useState('');
 
   useEffect(() => {
-    const allUsers = storageService.getUsers();
-    const t = allUsers.find(u => u.nip === nip);
-    if (t) {
-      setTeacher(t);
-      if (t.school) setSchoolName(t.school);
-    }
-    
-    const curr = storageService.getCurrentUser();
-    if (curr) setCurrentUser(curr);
-
-    // Load existing data if any
-    if (nip) {
-      const existing = storageService.getSupervisions(nip);
-      const reports = existing.filter((s: SupervisionReport) => s.type === 'administration');
-      if (reports.length > 0) {
-        const last = reports[reports.length - 1];
-        setDate(last.date);
-        setSemester(last.semester);
-        setYear(last.year);
-        setScores(last.scores || {});
-        // Load other fields if stored in notes/custom fields
-        // Assuming conditions stored in notes for now or we need to update type
-        if (last.notes && last.notes.conditions) {
-            try {
-                setConditions(JSON.parse(last.notes.conditions));
-            } catch (e) {
-                setConditions({});
-            }
+    const loadData = async () => {
+      // Load Teacher (Local first, then Remote)
+      const allUsers = storageService.getUsers();
+      let t = allUsers.find(u => u.nip === nip);
+      
+      if (!t && nip) {
+        try {
+          const remoteUser = await supabaseService.getUserByNip(nip);
+          if (remoteUser) t = remoteUser;
+        } catch (e) {
+          console.error('Failed to fetch teacher:', e);
         }
-        if (last.notes && last.notes.grade) setGrade(last.notes.grade);
-        setConclusion(last.conclusion || '');
-        setFollowUp(last.followUp || '');
       }
-    }
+      
+      if (t) {
+        setTeacher(t);
+        if (t.school) setSchoolName(t.school);
+      }
+      
+      const curr = storageService.getCurrentUser();
+      if (curr) setCurrentUser(curr);
+
+      // Load existing data if any
+      if (nip) {
+        const existing = storageService.getSupervisions(nip);
+        const reports = existing.filter((s: SupervisionReport) => s.type === 'administration');
+        if (reports.length > 0) {
+          const last = reports[reports.length - 1];
+          setDate(last.date);
+          setSemester(last.semester);
+          setYear(last.year);
+          setScores(last.scores || {});
+          // Load other fields if stored in notes/custom fields
+          // Assuming conditions stored in notes for now or we need to update type
+          if (last.notes && last.notes.conditions) {
+              try {
+                  setConditions(JSON.parse(last.notes.conditions));
+              } catch (e) {
+                  setConditions({});
+              }
+          }
+          if (last.notes && last.notes.grade) setGrade(last.notes.grade);
+          setConclusion(last.conclusion || '');
+          setFollowUp(last.followUp || '');
+        }
+      }
+    };
+
+    loadData();
   }, [nip]);
 
   const handleConditionChange = (item: string, value: boolean) => {
@@ -1273,30 +1303,45 @@ export const KSPlanningDeepForm = () => {
   const [grade, setGrade] = useState('');
 
   useEffect(() => {
-    const allUsers = storageService.getUsers();
-    const t = allUsers.find(u => u.nip === nip);
-    if (t) setTeacher(t);
-
-    const curr = storageService.getCurrentUser();
-    if (curr) setCurrentUser(curr);
-
-    if (nip) {
-      const existing = storageService.getSupervisions(nip);
-      const observations = existing.filter((s: SupervisionReport) => s.type === 'planning_deep');
-      if (observations.length > 0) {
-        const last = observations[observations.length - 1];
-        setDate(last.date);
-        setSemester(last.semester);
-        setYear(last.year);
-        setScores(last.scores);
-        setNotes(last.notes);
-        setConclusion(last.conclusion); // Using conclusion as Saran Pembinaan
-        if (last.subject) setSubject(last.subject);
-        if (last.topic) setMateri(last.topic);
-        if (last.learningGoals) setLearningOutcomes(last.learningGoals);
-        if (last.grade) setGrade(last.grade);
+    const loadData = async () => {
+      // Load Teacher (Local first, then Remote)
+      const allUsers = storageService.getUsers();
+      let t = allUsers.find(u => u.nip === nip);
+      
+      if (!t && nip) {
+        try {
+          const remoteUser = await supabaseService.getUserByNip(nip);
+          if (remoteUser) t = remoteUser;
+        } catch (e) {
+          console.error('Failed to fetch teacher:', e);
+        }
       }
-    }
+      
+      if (t) setTeacher(t);
+
+      const curr = storageService.getCurrentUser();
+      if (curr) setCurrentUser(curr);
+
+      if (nip) {
+        const existing = storageService.getSupervisions(nip);
+        const observations = existing.filter((s: SupervisionReport) => s.type === 'planning_deep');
+        if (observations.length > 0) {
+          const last = observations[observations.length - 1];
+          setDate(last.date);
+          setSemester(last.semester);
+          setYear(last.year);
+          setScores(last.scores);
+          setNotes(last.notes);
+          setConclusion(last.conclusion); // Using conclusion as Saran Pembinaan
+          if (last.subject) setSubject(last.subject);
+          if (last.topic) setMateri(last.topic);
+          if (last.learningGoals) setLearningOutcomes(last.learningGoals);
+          if (last.grade) setGrade(last.grade);
+        }
+      }
+    };
+    
+    loadData();
   }, [nip]);
 
   const handleScoreChange = (id: string, score: number) => {
