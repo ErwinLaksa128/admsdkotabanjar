@@ -219,7 +219,8 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
 
       {/* Debug Info */}
       <div className="mb-2 text-[10px] text-gray-400 text-center">
-        ID: {clientId.slice(0,4)}...{clientId.slice(-4)}
+        ID: {clientId.slice(0,4)}...{clientId.slice(-4)} <br/>
+        Origin: {window.location.origin}
       </div>
 
       {!isSignedIn ? (
