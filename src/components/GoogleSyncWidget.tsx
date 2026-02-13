@@ -38,6 +38,7 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
   };
 
   const isProduction = import.meta.env.PROD;
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
   const missingKeys = !import.meta.env.VITE_GOOGLE_CLIENT_ID || !import.meta.env.VITE_GOOGLE_API_KEY;
 
   useEffect(() => {
@@ -222,6 +223,11 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
             Backup File: <span className="font-mono">{getBackupFilename()}</span>
         </div>
       )}
+
+      {/* Debug Info */}
+      <div className="mb-2 text-[10px] text-gray-400 text-center">
+        ID: {clientId.slice(0,4)}...{clientId.slice(-4)}
+      </div>
 
       {!isSignedIn ? (
         <div className="space-y-3">

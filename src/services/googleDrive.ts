@@ -29,6 +29,10 @@ export const googleDriveService = {
   isMock: false,
 
   init: async (callback: (isSignedIn: boolean) => void) => {
+    // Debugging: Log Client ID status (safe log)
+    const clientId = GOOGLE_CONFIG.CLIENT_ID || '';
+    console.log('[GoogleDrive] Initializing with Client ID:', clientId.slice(0, 5) + '...' + clientId.slice(-5));
+
     if (!GOOGLE_CONFIG.CLIENT_ID || !GOOGLE_CONFIG.API_KEY) {
       console.warn('Google Drive Client ID or API Key is missing. Switch to Mock Mode.');
       googleDriveService.isMock = true;
