@@ -7,7 +7,6 @@ import { studentService, Student } from '../../services/studentService';
 import { attendanceService, AttendanceRecord } from '../../services/attendanceService';
 import { getMateriByClass } from '../../data/materiPjok';
 import { getMateriPaibpByClass } from '../../data/materiPaibp';
-import { supabaseService } from '../../services/supabaseService';
 
 const PresensiPage = () => {
   const navigate = useNavigate();

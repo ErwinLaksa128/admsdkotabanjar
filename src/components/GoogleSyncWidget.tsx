@@ -37,8 +37,18 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
     }
   };
 
+  const isProduction = import.meta.env.PROD;
+  const missingKeys = !import.meta.env.VITE_GOOGLE_CLIENT_ID || !import.meta.env.VITE_GOOGLE_API_KEY;
+
   useEffect(() => {
-    // We allow initialization even without keys now (Mock Mode)
+    // In Production, if keys are missing, we don't enable "Configured" state to force the alert.
+    // In Dev, we allow it for Mock Mode.
+    if (missingKeys && isProduction) {
+        setIsConfigured(false);
+        return;
+    }
+
+    // We allow initialization even without keys now (Mock Mode) - but only in DEV or if keys exist
     setIsConfigured(true);
       
     // Set a timeout to detect if Google scripts fail to load
@@ -182,7 +192,10 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
           <h3 className="font-semibold">Google Drive Belum Dikonfigurasi</h3>
         </div>
         <p className="mt-2 text-sm text-orange-600">
-          Untuk mengaktifkan sinkronisasi, Anda perlu menambahkan <strong>Client ID</strong> dan <strong>API Key</strong> pada file <code>src/services/googleDrive.ts</code>.
+          {isProduction 
+            ? "Fitur ini memerlukan konfigurasi Google Client ID dan API Key pada environment variables (Netlify)."
+            : "Untuk mengaktifkan sinkronisasi, tambahkan VITE_GOOGLE_CLIENT_ID dan VITE_GOOGLE_API_KEY pada file .env"
+          }
         </p>
       </div>
     );
@@ -203,6 +216,12 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
           </span>
         )}
       </div>
+      
+      {isSignedIn && user && (
+        <div className="mb-3 text-xs text-gray-500 text-center">
+            Backup File: <span className="font-mono">{getBackupFilename()}</span>
+        </div>
+      )}
 
       {!isSignedIn ? (
         <div className="space-y-3">

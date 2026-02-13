@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, FileSpreadsheet, FileText, Download, Trash2, Calendar, BookOpen, UserCheck, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 import { storageService } from '../../services/storage';
 import { studentService, Student } from '../../services/studentService';
