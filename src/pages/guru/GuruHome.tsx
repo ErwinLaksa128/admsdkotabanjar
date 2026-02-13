@@ -830,39 +830,24 @@ const GuruHome = () => {
               {/* Option 2: Generate AI */}
               <button
                 onClick={() => {
-                   if (user?.isPremium) {
-                      setAdminViewMode('generate');
-                      setIsSelectionModalOpen(false);
-                   } else {
-                      alert('Fitur Generate Otomatis hanya tersedia untuk akun Premium. Silakan hubungi admin sekolah untuk upgrade.');
-                   }
+                   setAdminViewMode('generate');
+                   setIsSelectionModalOpen(false);
                 }}
-                className={`group relative flex flex-col items-start overflow-hidden rounded-xl border p-6 text-left transition-all ${
-                    user?.isPremium 
-                    ? 'border-gray-200 bg-white hover:border-blue-500 hover:shadow-lg hover:ring-1 hover:ring-blue-200' 
-                    : 'border-gray-100 bg-gray-50 opacity-80'
-                }`}
+                className="group relative flex flex-col items-start overflow-hidden rounded-xl border border-gray-200 bg-white p-6 text-left transition-all hover:border-blue-500 hover:shadow-lg hover:ring-1 hover:ring-blue-200"
               >
-                <div className={`mb-4 rounded-xl p-3 transition-transform group-hover:scale-110 ${
-                    user?.isPremium ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-400'
-                }`}>
+                <div className="mb-4 rounded-xl bg-blue-100 p-3 text-blue-600 transition-transform group-hover:scale-110">
                   <FileText size={32} />
                 </div>
                 <h4 className="mb-2 text-lg font-bold text-gray-900">Generate Otomatis</h4>
                 <p className="mb-6 text-sm text-gray-500">
                   Buat dokumen secara instan menggunakan template pintar dan AI.
                 </p>
-                <div className={`mt-auto flex items-center text-sm font-semibold ${
-                    user?.isPremium ? 'text-blue-600' : 'text-gray-400'
-                }`}>
-                  {user?.isPremium ? 'Pilih Generate' : 'Terkunci (Premium)'} 
-                  {user?.isPremium && <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />}
+                <div className="mt-auto flex items-center text-sm font-semibold text-blue-600">
+                  Pilih Generate <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
                 </div>
                  {/* Badge Premium */}
-                 <span className={`absolute right-4 top-4 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                     user?.isPremium ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'
-                 }`}>
-                    Premium
+                 <span className="absolute right-4 top-4 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700">
+                    Semua User
                  </span>
               </button>
             </div>
