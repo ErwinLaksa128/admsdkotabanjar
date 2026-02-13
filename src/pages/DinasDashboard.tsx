@@ -6,6 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import RunningText from '../components/RunningText'
 import GoogleSyncWidget from '../components/GoogleSyncWidget'
 import { storageService, User } from '../services/storage'
+import { supabaseService } from '../services/supabaseService'
 
 const DinasDashboard = () => {
   const location = useLocation()
@@ -81,33 +82,38 @@ const DinasHome = () => {
   })
 
   useEffect(() => {
-    const users = storageService.getUsers()
-    
-    const countByRole = (role: string) => users.filter(u => u.role === role && u.active).length
-    
-    const totalPengawas = countByRole('pengawas')
-    const totalKepsek = countByRole('kepala-sekolah')
-    const totalGuru = countByRole('guru')
+    // Subscribe to real-time user updates
+    const unsubscribe = supabaseService.subscribeUsers((users) => {
+      const countByRole = (role: string) => users.filter(u => u.role === role && u.active).length
+      
+      const totalPengawas = countByRole('pengawas')
+      const totalKepsek = countByRole('kepala-sekolah')
+      const totalGuru = countByRole('guru')
 
-    const generateTrend = (finalValue: number) => {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun']
-      if (finalValue === 0) return months.map(m => ({ name: m, value: 0 }))
+      const generateTrend = (finalValue: number) => {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun']
+        if (finalValue === 0) return months.map(m => ({ name: m, value: 0 }))
 
-      return months.map((month, index) => {
-        // Linear growth from ~70% to 100%
-        const percentage = 0.7 + (0.3 * (index / 5))
-        // Add small random noise (-5% to +5%) except for last index
-        const noise = index === 5 ? 0 : (Math.random() * 0.1 - 0.05)
-        const val = Math.max(0, Math.round(finalValue * (percentage + noise)))
-        return { name: month, value: index === 5 ? finalValue : val }
+        return months.map((month, index) => {
+          // Linear growth from ~70% to 100%
+          const percentage = 0.7 + (0.3 * (index / 5))
+          // Add small random noise (-5% to +5%) except for last index
+          const noise = index === 5 ? 0 : (Math.random() * 0.1 - 0.05)
+          const val = Math.max(0, Math.round(finalValue * (percentage + noise)))
+          return { name: month, value: index === 5 ? finalValue : val }
+        })
+      }
+
+      setGrowthData({
+        pengawas: generateTrend(totalPengawas),
+        kepsek: generateTrend(totalKepsek),
+        guru: generateTrend(totalGuru)
       })
-    }
-
-    setGrowthData({
-      pengawas: generateTrend(totalPengawas),
-      kepsek: generateTrend(totalKepsek),
-      guru: generateTrend(totalGuru)
     })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   return (
@@ -227,12 +233,16 @@ const DinasHome = () => {
 
 const DataPengawas = () => {
   const navigate = useNavigate()
-  const regions = [
-    { name: 'Kec. Banjar', color: 'bg-red-50 border-red-200 text-red-900' },
-    { name: 'Kec. Pataruman', color: 'bg-yellow-50 border-yellow-200 text-yellow-900' },
-    { name: 'Kec. Purwaharja', color: 'bg-green-50 border-green-200 text-green-900' },
-    { name: 'Kec. Langensari', color: 'bg-purple-50 border-purple-200 text-purple-900' },
-  ]
+  const [users, setUsers] = useState<User[]>([])
+
+  useEffect(() => {
+    const unsubscribe = supabaseService.subscribeUsers((allUsers) => {
+      setUsers(allUsers.filter(u => u.role === 'pengawas'))
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [])
 
   return (
     <div>
@@ -243,13 +253,39 @@ const DataPengawas = () => {
         <ChevronLeft size={20} /> Kembali
       </button>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        {regions.map((region) => (
-          <div key={region.name} className={`rounded-xl border p-6 ${region.color} transition hover:shadow-md cursor-pointer`}>
-            <h3 className="text-xl font-bold mb-2">{region.name}</h3>
-            <p className="text-sm opacity-80">Wilayah Binaan</p>
-          </div>
-        ))}
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="min-w-full divide-y divide-gray-200 bg-white">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NIP</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Wilayah Binaan</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sekolah Binaan</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {users.length > 0 ? (
+              users.map((user) => (
+                <tr key={user.nip}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.nip}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.wilayahBinaan || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.managedSchools?.length || 0} Sekolah</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {user.active ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">Belum ada data Pengawas</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -260,8 +296,12 @@ const DataKepalaSekolah = () => {
   const [users, setUsers] = useState<User[]>([])
 
   useEffect(() => {
-    const allUsers = storageService.getUsers()
-    setUsers(allUsers.filter(u => u.role === 'kepala-sekolah'))
+    const unsubscribe = supabaseService.subscribeUsers((allUsers) => {
+      setUsers(allUsers.filter(u => u.role === 'kepala-sekolah'))
+    })
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   return (
@@ -314,8 +354,12 @@ const DataGuru = () => {
   const [users, setUsers] = useState<User[]>([])
 
   useEffect(() => {
-    const allUsers = storageService.getUsers()
-    setUsers(allUsers.filter(u => u.role === 'guru'))
+    const unsubscribe = supabaseService.subscribeUsers((allUsers) => {
+      setUsers(allUsers.filter(u => u.role === 'guru'))
+    })
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   return (
