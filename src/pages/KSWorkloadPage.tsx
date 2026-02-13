@@ -38,6 +38,12 @@ const KSWorkloadPage = () => {
   const handleSaveEvidence = async (docId: string, url: string) => {
     if (!currentUser) return;
 
+    // Validasi URL sederhana
+    if (url && !url.startsWith('http')) {
+        alert('Link harus diawali dengan http:// atau https://');
+        return;
+    }
+
     setIsSaving(true);
     try {
       const updatedEvidence = {
@@ -50,18 +56,25 @@ const KSWorkloadPage = () => {
         workloadEvidence_v2: updatedEvidence
       };
 
-      await supabaseService.saveUser(updatedUser);
-      setEvidenceLinks(updatedEvidence);
-      
-      // Update local storage as well to keep it in sync
+      // 1. Update local storage first (Optimistic)
       storageService.saveUser(updatedUser);
+      storageService.setCurrentUser(updatedUser);
       
-      // Also update local state
+      // 2. Update local state
       setCurrentUser(updatedUser);
+      setEvidenceLinks(updatedEvidence);
+
+      // 3. Save to Supabase (Async)
+      await supabaseService.saveUser(updatedUser);
+      
+      // Check for school field after saving attempt
+      if (!updatedUser.school) {
+           alert("Peringatan: Data sekolah Anda belum terisi. Pengawas mungkin tidak dapat melihat data ini. Silakan hubungi admin atau lengkapi profil Anda.");
+      }
       
     } catch (error) {
       console.error("Failed to save evidence", error);
-      alert("Gagal menyimpan bukti.");
+      alert("Gagal menyimpan bukti ke server. Periksa koneksi internet Anda.");
     } finally {
       setIsSaving(false);
     }
@@ -85,17 +98,46 @@ const KSWorkloadPage = () => {
     return (totalScore / totalItems).toFixed(1);
   };
 
+  const totalDocs = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length;
+  const filledDocs = Object.values(evidenceLinks).filter(link => link && link.trim() !== '').length;
+  const progressPercentage = Math.round((filledDocs / totalDocs) * 100);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <CheckSquare className="text-indigo-600" />
-          Penilaian Kinerja Kepala Sekolah
-        </h1>
-        <div className="bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-100 flex items-center gap-3">
-            <span className="text-sm text-indigo-800">Rata-rata Penilaian:</span>
-            <span className="text-2xl font-bold text-indigo-700">{calculateAverage()}</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Score Card */}
+        <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex items-center justify-between">
+           <div>
+              <p className="text-sm text-gray-500 mb-1">Rata-rata Penilaian</p>
+              <h2 className="text-3xl font-bold text-indigo-700">{calculateAverage()}</h2>
+           </div>
+           <div className="h-12 w-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600">
+              <CheckSquare size={24} />
+           </div>
         </div>
+
+        {/* Progress Card */}
+        <div className="bg-white p-4 rounded-xl border border-green-100 shadow-sm">
+           <div className="flex justify-between items-end mb-2">
+              <div>
+                <p className="text-sm text-gray-500 mb-1">Kelengkapan Bukti</p>
+                <h2 className="text-2xl font-bold text-green-700">{progressPercentage}%</h2>
+              </div>
+              <span className="text-sm text-gray-500">{filledDocs} / {totalDocs} Dokumen</span>
+           </div>
+           <div className="w-full bg-gray-100 rounded-full h-2">
+              <div 
+                className="bg-green-500 h-2 rounded-full transition-all duration-500" 
+                style={{ width: `${progressPercentage}%` }}
+              ></div>
+           </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          Input Bukti Dukung
+        </h1>
       </div>
 
       {/* Feedback Section */}

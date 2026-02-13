@@ -334,7 +334,9 @@ export const KSPelaksanaanForm = () => {
       grade
     };
     storageService.saveSupervision(report);
-    supabaseService.saveSupervision({ ...report, school: teacher.school || '' });
+    // Use teacher's school or fallback to current user's school
+    const schoolToSave = teacher.school || currentUser?.school || '';
+    supabaseService.saveSupervision({ ...report, school: schoolToSave });
     alert('Observasi pelaksanaan berhasil disimpan!');
     navigate('/kepala-sekolah/pelaksanaan');
   };
@@ -887,9 +889,11 @@ export const KSReportForm = () => {
       type: 'administration'
     };
     storageService.saveSupervision(report);
-    if (teacher.school) {
-        supabaseService.saveSupervision({ ...report, school: teacher.school });
-    }
+    
+    // Use teacher's school or fallback to current user's school
+    const schoolToSave = teacher.school || currentUser?.school || '';
+    supabaseService.saveSupervision({ ...report, school: schoolToSave });
+    
     alert('Laporan instrumen supervisi berhasil disimpan!');
     navigate('/kepala-sekolah/laporan');
   };
@@ -1340,7 +1344,11 @@ export const KSPlanningDeepForm = () => {
     };
     
     storageService.saveSupervision(report);
-    supabaseService.saveSupervision({ ...report, school: teacher.school || '' });
+    
+    // Use teacher's school or fallback to current user's school
+    const schoolToSave = teacher.school || currentUser?.school || '';
+    supabaseService.saveSupervision({ ...report, school: schoolToSave });
+    
     alert('Laporan Supervisi Perencanaan berhasil disimpan!');
     navigate('/kepala-sekolah/perencanaan');
   };
@@ -2041,74 +2049,93 @@ const KSVisitsPage = () => {
 const EvidenceUploadSection = ({ 
   title, 
   items, 
-  onCompletionCheck 
+  onCompletionCheck,
+  user
 }: { 
   title: string; 
   items: { id: string; label: string }[];
   onCompletionCheck?: () => void;
+  user?: User | null;
 }) => {
   const [evidence, setEvidence] = useState<Record<string, string>>({});
   const [, setCurrentUser] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState<Record<string, boolean>>({});
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const user = storageService.getCurrentUser();
-    if (user) {
-      setCurrentUser(user);
-      if (user.workloadEvidence_v2) {
-        setEvidence(user.workloadEvidence_v2);
+    const currentUserData = user || storageService.getCurrentUser();
+    if (currentUserData) {
+      setCurrentUser(currentUserData);
+      if (currentUserData.workloadEvidence_v2) {
+        setEvidence(currentUserData.workloadEvidence_v2);
       }
     }
-  }, []);
+  }, [user]);
 
-  const handleSave = (id: string) => {
+  const handleSave = async (id: string) => {
     // Re-fetch user to ensure we have the latest state before saving
     let user = storageService.getCurrentUser();
     if (!user) {
-        console.error("No user found when saving");
+        alert("Sesi Anda telah berakhir. Silakan login kembali.");
         return;
     }
 
     const url = editValues[id] !== undefined ? editValues[id] : (evidence[id] || '');
     
-    // Update local evidence state immediately
-    const updatedEvidence = { ...evidence, [id]: url };
-    setEvidence(updatedEvidence);
-    
-    // Update User object
-    // We merge with existing evidence in storage to avoid overwriting updates from other sections
-    const existingEvidence = user.workloadEvidence_v2 || {};
-    const finalEvidence = { ...existingEvidence, [id]: url };
-    
-    const updatedUser = { ...user, workloadEvidence_v2: finalEvidence };
-    
-    // 1. Save to LocalStorage
-    storageService.saveUser(updatedUser);
-    
-    // 2. Update SessionStorage (Critical for getCurrentUser() calls)
-    storageService.setCurrentUser(updatedUser);
-    
-    // 3. Update local component state
-    setCurrentUser(updatedUser);
-    
-    // 4. Save to Firebase
-    supabaseService.saveUser(updatedUser);
-    
-    // 5. Reset UI state
-    setIsEditing(prev => ({ ...prev, [id]: false }));
-    setEditValues(prev => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-    });
+    // Validasi URL sederhana
+    if (url && !url.startsWith('http')) {
+        alert('Link harus diawali dengan http:// atau https://');
+        return;
+    }
 
-    // 6. Notify Parent
-    if (onCompletionCheck) {
-        // Small timeout to allow storage propagation if needed
-        setTimeout(() => {
+    setIsSaving(prev => ({ ...prev, [id]: true }));
+
+    try {
+        // Update local evidence state immediately
+        const updatedEvidence = { ...evidence, [id]: url };
+        setEvidence(updatedEvidence);
+        
+        // Update User object
+        // We merge with existing evidence in storage to avoid overwriting updates from other sections
+        const existingEvidence = user.workloadEvidence_v2 || {};
+        const finalEvidence = { ...existingEvidence, [id]: url };
+        
+        const updatedUser = { ...user, workloadEvidence_v2: finalEvidence };
+        
+        // 1. Save to LocalStorage
+        storageService.saveUser(updatedUser);
+        
+        // 2. Update SessionStorage (Critical for getCurrentUser() calls)
+        storageService.setCurrentUser(updatedUser);
+        
+        // 3. Update local component state
+        setCurrentUser(updatedUser);
+
+        // 4. Notify Parent (Optimistic Update for UI responsiveness)
+        if (onCompletionCheck) {
             onCompletionCheck();
-        }, 50);
+        }
+        
+        // 5. Save to Supabase (Async with error handling)
+        await supabaseService.saveUser(updatedUser);
+        
+        if (!updatedUser.school) {
+             alert("Peringatan: Data sekolah Anda belum terisi. Pengawas mungkin tidak dapat melihat data ini. Silakan hubungi admin atau lengkapi profil Anda.");
+        }
+
+        // 6. Reset UI state
+        setIsEditing(prev => ({ ...prev, [id]: false }));
+        setEditValues(prev => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
+    } catch (error: any) {
+        console.error("Error saving evidence:", error);
+        alert(`Gagal menyimpan data ke server: ${error.message || "Periksa koneksi internet Anda."}`);
+    } finally {
+        setIsSaving(prev => ({ ...prev, [id]: false }));
     }
   };
 
@@ -2130,6 +2157,7 @@ const EvidenceUploadSection = ({
            const currentUrl = evidence[item.id];
            const hasLink = !!currentUrl && currentUrl.length > 0;
            const editing = isEditing[item.id];
+           const saving = isSaving[item.id];
            
            // Determine input value: Priority to Edit Value -> Current Saved Value -> Empty
            const inputValue = editValues[item.id] !== undefined ? editValues[item.id] : (currentUrl || '');
@@ -2149,6 +2177,7 @@ const EvidenceUploadSection = ({
                             className="flex-1 border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                             value={inputValue}
                             onChange={(e) => setEditValues(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            disabled={saving}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                     handleSave(item.id);
@@ -2165,20 +2194,23 @@ const EvidenceUploadSection = ({
                             }}
                             className="bg-yellow-500 text-white px-3 py-2 rounded text-sm hover:bg-yellow-600 flex items-center gap-1"
                             title="Cek Link (Buka di tab baru)"
+                            disabled={saving}
                         >
                             <ExternalLink size={16} />
                             Cek
                         </button>
                         <button 
                             onClick={() => handleSave(item.id)}
-                            className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700"
+                            className={`px-4 py-2 rounded text-sm text-white flex items-center gap-2 ${saving ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                            disabled={saving}
                         >
-                            Simpan
+                            {saving ? 'Menyimpan...' : 'Simpan'}
                         </button>
                         {hasLink && (
                             <button 
                                 onClick={() => handleCancel(item.id)}
                                 className="bg-gray-200 text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-300"
+                                disabled={saving}
                             >
                                 Batal
                             </button>
@@ -2213,40 +2245,74 @@ const EvidenceUploadSection = ({
   );
 };
 
-const KSManajerialPage = ({ onUpdate }: { onUpdate?: () => void }) => {
+const WorkloadProgressWidget = ({ user }: { user: User | null }) => {
+  const [progress, setProgress] = useState(0);
+  
+  useEffect(() => {
+    if (user) {
+        const totalItems = MANAJERIAL_DOCS.length + KEWIRAUSAHAAN_DOCS.length + SUPERVISI_EVIDENCE_DOCS.length;
+        const allIds = [
+            ...MANAJERIAL_DOCS.map(d => d.id),
+            ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
+            ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
+        ];
+        const filledCount = allIds.filter(id => user.workloadEvidence_v2?.[id]).length;
+        setProgress(Math.round((filledCount / totalItems) * 100));
+    }
+  }, [user]);
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex items-center gap-4 animate-fade-in">
+        <div className="flex-1">
+            <div className="flex justify-between items-center mb-1">
+                <span className="text-sm font-bold text-blue-800">Total Progress Beban Kerja</span>
+                <span className="text-sm font-bold text-blue-600">{progress}%</span>
+            </div>
+            <div className="w-full bg-blue-200 rounded-full h-2">
+                <div className="bg-blue-600 h-2 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+            </div>
+        </div>
+    </div>
+  );
+};
+
+const KSManajerialPage = ({ user, onUpdate }: { user: User | null; onUpdate?: () => void }) => {
   return (
     <div>
+      <WorkloadProgressWidget user={user} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Beban Kerja: Manajerial</h1>
         <p className="text-gray-600">Bukti Fisik Penugasan (Manajerial)</p>
       </div>
-      <EvidenceUploadSection title="Dokumen Manajerial" items={MANAJERIAL_DOCS} onCompletionCheck={onUpdate} />
+      <EvidenceUploadSection title="Dokumen Manajerial" items={MANAJERIAL_DOCS} onCompletionCheck={onUpdate} user={user} />
     </div>
   );
 };
 
-const KSKewirausahaanPage = ({ onUpdate }: { onUpdate?: () => void }) => {
+const KSKewirausahaanPage = ({ user, onUpdate }: { user: User | null; onUpdate?: () => void }) => {
   return (
     <div>
+      <WorkloadProgressWidget user={user} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Beban Kerja: Pengembangan Kewirausahaan</h1>
         <p className="text-gray-600">Bukti Fisik Penugasan (Pengembangan Kewirausahaan)</p>
       </div>
-      <EvidenceUploadSection title="Dokumen Kewirausahaan" items={KEWIRAUSAHAAN_DOCS} onCompletionCheck={onUpdate} />
+      <EvidenceUploadSection title="Dokumen Kewirausahaan" items={KEWIRAUSAHAAN_DOCS} onCompletionCheck={onUpdate} user={user} />
     </div>
   );
 };
 
-const KSSupervisiPage = ({ onUpdate }: { onUpdate?: () => void }) => {
+const KSSupervisiPage = ({ user, onUpdate }: { user: User | null; onUpdate?: () => void }) => {
   const navigate = useNavigate();
   return (
     <div>
+      <WorkloadProgressWidget user={user} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Beban Kerja: Supervisi</h1>
         <p className="text-gray-600">Bukti Fisik Penugasan (Supervisi kepada guru dan tenaga kependidikan)</p>
       </div>
 
-      <EvidenceUploadSection title="Dokumen Bukti Fisik Supervisi" items={SUPERVISI_EVIDENCE_DOCS} onCompletionCheck={onUpdate} />
+      <EvidenceUploadSection title="Dokumen Bukti Fisik Supervisi" items={SUPERVISI_EVIDENCE_DOCS} onCompletionCheck={onUpdate} user={user} />
 
       <div className="mt-8">
         <h2 className="text-xl font-bold mb-4 text-gray-800 border-b pb-2">Alat Supervisi</h2>
@@ -2527,9 +2593,9 @@ const KepalaSekolahDashboard = () => {
             } />
             
             {/* Workload Pages */}
-            <Route path="manajerial" element={<KSManajerialPage onUpdate={refreshUser} />} />
-            <Route path="kewirausahaan" element={<KSKewirausahaanPage onUpdate={refreshUser} />} />
-            <Route path="supervisi" element={<KSSupervisiPage onUpdate={refreshUser} />} />
+            <Route path="manajerial" element={<KSManajerialPage user={currentUser} onUpdate={refreshUser} />} />
+            <Route path="kewirausahaan" element={<KSKewirausahaanPage user={currentUser} onUpdate={refreshUser} />} />
+            <Route path="supervisi" element={<KSSupervisiPage user={currentUser} onUpdate={refreshUser} />} />
             <Route path="hasil-penilaian" element={<KSWorkloadPage />} />
 
             {/* Existing Sub-pages (kept for routing from Supervisi page) */}

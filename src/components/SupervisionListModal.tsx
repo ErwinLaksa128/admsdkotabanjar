@@ -8,29 +8,34 @@ interface SupervisionListModalProps {
   onClose: () => void;
   schoolName: string;
   principalName: string;
+  reports?: SupervisionReport[]; // Optional, if provided we use this instead of fetching
 }
 
 const SupervisionListModal: React.FC<SupervisionListModalProps> = ({ 
   isOpen, 
   onClose, 
   schoolName, 
-  principalName 
+  principalName,
+  reports: providedReports
 }) => {
-  const [reports, setReports] = useState<SupervisionReport[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [fetchedReports, setFetchedReports] = useState<SupervisionReport[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'planning' | 'execution' | 'instrument'>('planning');
 
+  // Use provided reports if available, otherwise use fetched reports
+  const reports = providedReports || fetchedReports;
+
   useEffect(() => {
-    if (isOpen && schoolName) {
+    if (isOpen && schoolName && !providedReports) {
       setIsLoading(true);
-      const unsubscribe = supabaseService.subscribeSupervisionsBySchool(schoolName, (fetchedReports) => {
-        setReports(fetchedReports);
+      const unsubscribe = supabaseService.subscribeSupervisionsBySchool(schoolName, (data) => {
+        setFetchedReports(data);
         setIsLoading(false);
       });
 
       return () => unsubscribe();
     }
-  }, [isOpen, schoolName]);
+  }, [isOpen, schoolName, providedReports]);
 
   if (!isOpen) return null;
 

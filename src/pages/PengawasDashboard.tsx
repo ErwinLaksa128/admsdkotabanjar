@@ -52,8 +52,10 @@ class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean,
 // Helper to get the best principal for a school (prioritizing active and evidence count)
 const getBestPrincipal = (users: User[], schoolName: string): User | undefined => {
   const normalize = (str: string | undefined | null) => str?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
+  const targetSchool = normalize(schoolName);
+  
   const candidates = users.filter(u => 
-      normalize(u.school) === normalize(schoolName) && 
+      normalize(u.school) === targetSchool && 
       u.role === 'kepala-sekolah'
   );
 
@@ -65,7 +67,6 @@ const getBestPrincipal = (users: User[], schoolName: string): User | undefined =
   const pool = activeCandidates.length > 0 ? activeCandidates : candidates;
 
   // Sort by evidence count (descending)
-  // Fix: Merge v2 and legacy evidence to count total items correctly
   return pool.sort((a, b) => {
       const evidenceA = { ...((a as any).workloadEvidence || {}), ...(a.workloadEvidence_v2 || {}) };
       const evidenceB = { ...((b as any).workloadEvidence || {}), ...(b.workloadEvidence_v2 || {}) };
@@ -104,6 +105,10 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
   // Supervision List Modal State
   const [isSupervisionListModalOpen, setIsSupervisionListModalOpen] = useState(false);
   const [supervisionModalProps, setSupervisionModalProps] = useState<{school: string, principal: string} | null>(null);
+
+  // Fresh Principal Data (Direct Fetch)
+  const [freshPrincipals, setFreshPrincipals] = useState<User[]>([]);
+  const [isLoadingFresh, setIsLoadingFresh] = useState(false);
 
 
 
@@ -201,13 +206,26 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
         // Reset first
         setSelectedSchoolDocs([]);
         
+        // Fetch fresh generated docs
         const unsubscribe = supabaseService.subscribeGeneratedDocsBySchool(selectedSchool, (data) => {
             setSelectedSchoolDocs(data);
         });
 
+        // Fetch fresh principal data to ensure we have latest evidence
+        setIsLoadingFresh(true);
+        supabaseService.getPrincipalsBySchool(selectedSchool)
+            .then(data => {
+                console.log("DEBUG: Fresh principals fetched:", data);
+                setFreshPrincipals(data);
+            })
+            .catch(err => console.error("Error fetching fresh principals:", err))
+            .finally(() => setIsLoadingFresh(false));
+
         return () => {
             unsubscribe();
         };
+    } else {
+        setFreshPrincipals([]);
     }
   }, [selectedSchool]);
 
@@ -759,7 +777,8 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                       ...KEWIRAUSAHAAN_DOCS.map(d => d.id),
                       ...SUPERVISI_EVIDENCE_DOCS.map(d => d.id)
                   ];
-                  const evidence = principal.workloadEvidence_v2 || (principal as any).workloadEvidence || {};
+                  // Fix: Merge v2 and legacy evidence to be consistent with detail modal
+                  const evidence = { ...((principal as any).workloadEvidence || {}), ...(principal.workloadEvidence_v2 || {}) };
                   const filledCount = allIds.filter(id => evidence[id]).length;
                   ksProgressPercent = Math.round((filledCount / totalItems) * 100);
                   
@@ -847,8 +866,22 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                 </h4>
                 <div className="space-y-2">
                   {(() => {
-                    const bestPrincipal = getBestPrincipal(users, selectedSchool);
+                    // Use fresh data if available, otherwise fallback to global state
+                    let bestPrincipal: User | undefined;
+                    
+                    if (freshPrincipals.length > 0) {
+                        bestPrincipal = getBestPrincipal(freshPrincipals, selectedSchool);
+                    }
+                    
+                    if (!bestPrincipal) {
+                        bestPrincipal = getBestPrincipal(users, selectedSchool);
+                    }
+                    
                     const displayPrincipals = bestPrincipal ? [bestPrincipal] : [];
+                    
+                    if (isLoadingFresh && displayPrincipals.length === 0) {
+                         return <p className="text-sm text-purple-600 animate-pulse p-4">Memuat data kepala sekolah...</p>;
+                    }
 
                     return displayPrincipals.length > 0 ? (
                       displayPrincipals.map(user => (
@@ -949,6 +982,11 @@ const PengawasHome = ({ users, currentUser }: PengawasHomeProps) => {
                                                            
                                                            const allDocs = [...MANAJERIAL_DOCS, ...KEWIRAUSAHAAN_DOCS, ...SUPERVISI_EVIDENCE_DOCS];
                                                            const evidence = { ...((user as any).workloadEvidence || {}), ...(user.workloadEvidence_v2 || {}) };
+                                                           
+                                                           // DEBUG: Log evidence for troubleshooting
+                                                           console.log(`[DEBUG] Rendering evidence for ${user.name}:`, evidence);
+                                                           console.log(`[DEBUG] Has workloadScores_v2?`, !!user.workloadScores_v2);
+                                                           
                                                            const uploadedDocs = allDocs.filter(d => evidence[d.id]);
                                                            
                                                            if (uploadedDocs.length === 0) return <p className="text-xs text-gray-400 italic pl-1">Belum ada dokumen diunggah.</p>;

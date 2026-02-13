@@ -110,7 +110,8 @@ const GuruHome = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState<GasResponse | null>(null);
   const [generatedDocs, setGeneratedDocs] = useState<{ type: string; url: string; date: string }[]>([]);
-  const [adminViewMode, setAdminViewMode] = useState<'menu' | 'generate' | 'results'>('menu');
+  const [adminViewMode, setAdminViewMode] = useState<'menu' | 'generate' | 'manual' | 'results'>('menu');
+  const [isSelectionModalOpen, setIsSelectionModalOpen] = useState(false);
   const [isExportingQrPdf, setIsExportingQrPdf] = useState(false);
 
   // Modal States
@@ -787,6 +788,88 @@ const GuruHome = () => {
 
   return (
     <>
+      {/* Modal Selection (Input vs Generate) */}
+      {isSelectionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="mb-8 flex items-center justify-between">
+               <div>
+                  <h3 className="text-2xl font-bold text-gray-900">Pilih Metode Input</h3>
+                  <p className="text-gray-500">Bagaimana Anda ingin melengkapi dokumen administrasi?</p>
+               </div>
+               <button onClick={() => setIsSelectionModalOpen(false)} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                  <X size={24} />
+               </button>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {/* Option 1: Manual Input */}
+              <button
+                onClick={() => {
+                   setAdminViewMode('manual');
+                   setIsSelectionModalOpen(false);
+                }}
+                className="group relative flex flex-col items-start overflow-hidden rounded-xl border border-gray-200 bg-white p-6 text-left transition-all hover:border-orange-300 hover:shadow-lg hover:ring-1 hover:ring-orange-200"
+              >
+                <div className="mb-4 rounded-xl bg-orange-100 p-3 text-orange-600 group-hover:scale-110 transition-transform">
+                  <LinkIcon size={32} />
+                </div>
+                <h4 className="mb-2 text-lg font-bold text-gray-900">Input Manual (Link)</h4>
+                <p className="mb-6 text-sm text-gray-500">
+                  Masukkan link Google Drive / Docs yang sudah Anda miliki secara manual.
+                </p>
+                <div className="mt-auto flex items-center text-sm font-semibold text-orange-600">
+                  Pilih Manual <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
+                </div>
+                {/* Badge Free/Premium */}
+                 <span className="absolute right-4 top-4 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-500">
+                    Semua User
+                 </span>
+              </button>
+
+              {/* Option 2: Generate AI */}
+              <button
+                onClick={() => {
+                   if (user?.isPremium) {
+                      setAdminViewMode('generate');
+                      setIsSelectionModalOpen(false);
+                   } else {
+                      alert('Fitur Generate Otomatis hanya tersedia untuk akun Premium. Silakan hubungi admin sekolah untuk upgrade.');
+                   }
+                }}
+                className={`group relative flex flex-col items-start overflow-hidden rounded-xl border p-6 text-left transition-all ${
+                    user?.isPremium 
+                    ? 'border-gray-200 bg-white hover:border-blue-500 hover:shadow-lg hover:ring-1 hover:ring-blue-200' 
+                    : 'border-gray-100 bg-gray-50 opacity-80'
+                }`}
+              >
+                <div className={`mb-4 rounded-xl p-3 transition-transform group-hover:scale-110 ${
+                    user?.isPremium ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-400'
+                }`}>
+                  <FileText size={32} />
+                </div>
+                <h4 className="mb-2 text-lg font-bold text-gray-900">Generate Otomatis</h4>
+                <p className="mb-6 text-sm text-gray-500">
+                  Buat dokumen secara instan menggunakan template pintar dan AI.
+                </p>
+                <div className={`mt-auto flex items-center text-sm font-semibold ${
+                    user?.isPremium ? 'text-blue-600' : 'text-gray-400'
+                }`}>
+                  {user?.isPremium ? 'Pilih Generate' : 'Terkunci (Premium)'} 
+                  {user?.isPremium && <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />}
+                </div>
+                 {/* Badge Premium */}
+                 <span className={`absolute right-4 top-4 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                     user?.isPremium ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-500'
+                 }`}>
+                    Premium
+                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Result / Loading */}
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -1286,24 +1369,22 @@ const GuruHome = () => {
           {adminViewMode === 'menu' && (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               <button
-                onClick={() => setAdminViewMode('generate')}
+                onClick={() => setIsSelectionModalOpen(true)}
                 className="group relative overflow-hidden rounded-2xl bg-white p-6 text-left shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ring-1 ring-gray-100 md:p-8"
               >
-                <div className={`absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-20%] rounded-full opacity-50 transition-transform group-hover:scale-150 ${user?.isPremium ? 'bg-blue-50' : 'bg-orange-50'}`}></div>
+                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-20%] rounded-full bg-blue-50 opacity-50 transition-transform group-hover:scale-150"></div>
                 <div className="relative z-10">
-                  <div className={`mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl shadow-sm transition-transform group-hover:scale-110 group-hover:rotate-3 ${user?.isPremium ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
-                    {user?.isPremium ? <Plus size={32} /> : <LinkIcon size={32} />}
+                  <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-600 shadow-sm transition-transform group-hover:scale-110 group-hover:rotate-3">
+                    <FileText size={32} />
                   </div>
-                  <h4 className={`mb-2 text-2xl font-bold group-hover:${user?.isPremium ? 'text-blue-700' : 'text-orange-700'} text-gray-900`}>
-                    {user?.isPremium ? 'Generate Dokumen' : 'Input Manual'}
+                  <h4 className="mb-2 text-2xl font-bold text-gray-900 group-hover:text-blue-700">
+                    Input & Generate
                   </h4>
                   <p className="text-gray-500">
-                    {user?.isPremium 
-                      ? 'Buat dokumen administrasi pembelajaran baru secara otomatis dengan template standar.' 
-                      : 'Masukkan link Google Drive dokumen administrasi Anda secara manual (Fitur Generate Khusus Premium).'}
+                    Kelola dokumen administrasi pembelajaran. Pilih input manual (link) atau generate otomatis (AI).
                   </p>
-                  <div className={`mt-6 flex items-center text-sm font-semibold ${user?.isPremium ? 'text-blue-600' : 'text-orange-600'}`}>
-                    {user?.isPremium ? 'Mulai Generate' : 'Mulai Input'} <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
+                  <div className="mt-6 flex items-center text-sm font-semibold text-blue-600">
+                    Mulai <ArrowLeft className="ml-2 rotate-180 transition-transform group-hover:translate-x-1" size={16} />
                   </div>
                 </div>
               </button>
@@ -1354,15 +1435,19 @@ const GuruHome = () => {
                 
                 // Logic based on mode
                 const isGenerateMode = adminViewMode === 'generate';
+                const isManualMode = adminViewMode === 'manual';
                 const isResultMode = adminViewMode === 'results';
                 
                 const isDisabled = isResultMode && !isDone;
                 
                 const handleClick = () => {
-                  if (isGenerateMode) {
-                    // Free User Logic: Manual Input
+                  if (isManualMode) {
+                      // Manual Mode: Always open manual input
+                      handleOpenManualInput(doc, existingDoc?.url);
+                  } else if (isGenerateMode) {
+                    // Generate Mode: Check Premium (Double check, though modal filters it)
                     if (!user?.isPremium) {
-                        handleOpenManualInput(doc, existingDoc?.url);
+                        alert('Akses Ditolak: Fitur ini hanya untuk Premium.');
                         return;
                     }
 
@@ -1385,19 +1470,17 @@ const GuruHome = () => {
                 let iconBg = '';
                 
                 if (isGenerateMode) {
-                    if (user?.isPremium) {
-                        // Premium Generate
+                        // Premium Generate Style
                         cardStyle = isDone 
                             ? 'border-green-500 bg-green-50 ring-1 ring-green-200 shadow-sm hover:-translate-y-1 hover:shadow-md'
                             : 'border-gray-200 bg-white hover:-translate-y-1 hover:border-blue-500 hover:ring-1 hover:ring-blue-200 hover:shadow-lg';
                         iconBg = isDone ? 'bg-green-100 text-green-600' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100';
-                    } else {
-                        // Free Manual Input
+                } else if (isManualMode) {
+                        // Manual Input Style
                         cardStyle = isDone
                             ? 'border-green-200 bg-green-50/50 hover:-translate-y-1 hover:bg-green-100 hover:shadow-lg'
                             : 'border-gray-200 bg-white hover:-translate-y-1 hover:border-orange-300 hover:shadow-lg';
                         iconBg = isDone ? 'bg-green-100 text-green-600' : 'bg-orange-50 text-orange-500 group-hover:bg-orange-100 group-hover:text-orange-600';
-                    }
                 } else {
                     // Result Mode
                     cardStyle = isDone
@@ -1412,15 +1495,15 @@ const GuruHome = () => {
                     onClick={handleClick}
                     disabled={isDisabled}
                     title={
-                      isGenerateMode
-                        ? (user?.isPremium ? 'Klik untuk generate otomatis' : 'Klik untuk input link manual')
-                        : (isDone ? 'Klik untuk membuka folder' : 'Belum tersedia')
+                      isGenerateMode ? 'Klik untuk generate otomatis' :
+                      isManualMode ? 'Klik untuk input link manual' :
+                      (isDone ? 'Klik untuk membuka folder' : 'Belum tersedia')
                     }
                     className={`group relative flex flex-col items-center justify-center rounded-xl border p-6 text-center transition-all duration-300 ${cardStyle}`}
                   >
                     <div className={`mb-4 rounded-full p-3 transition-colors ${iconBg}`}>
                        {isResultMode && isDone ? <ExternalLink size={24} /> : (
-                         !user?.isPremium && isGenerateMode ? <LinkIcon size={24} /> : <FileText size={24} />
+                         isManualMode ? <LinkIcon size={24} /> : <FileText size={24} />
                        )}
                     </div>
                     
@@ -1440,14 +1523,14 @@ const GuruHome = () => {
                       {doc}
                     </span>
                     
-                    {/* Status Badge for Generate Mode */}
-                    {isGenerateMode && (
+                    {/* Status Badge for Generate/Manual Mode */}
+                    {(isGenerateMode || isManualMode) && (
                       <span className={`mt-3 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                         isDone 
                           ? 'bg-green-100 text-green-700' 
                           : 'bg-gray-100 text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-600'
                       }`}>
-                        {isDone ? 'Selesai' : (user?.isPremium ? 'Generate' : 'Input Link')}
+                        {isDone ? 'Selesai' : (isGenerateMode ? 'Generate' : 'Input Link')}
                       </span>
                     )}
                   </button>

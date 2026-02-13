@@ -33,11 +33,22 @@ const normalizeUser = (u: any): User => {
   const feedback = u.workloadFeedback_v2 || u.workloadfeedback_v2 || scores?._feedback || '';
   const feedbackDate = u.workloadFeedbackDate_v2 || u.workloadfeedbackdate_v2 || scores?._feedbackDate || '';
 
+  // Extract evidence from scores if available (fallback strategy since column might be missing)
+  let evidence = parseJsonIfNeeded(u.workloadEvidence_v2 || u.workloadevidence_v2);
+  // Prioritize packed evidence if available, as it is the most reliable source with the current packing strategy
+  if (scores?._evidence) {
+      evidence = scores._evidence;
+  } else if (Object.keys(evidence).length === 0 && scores?._evidence) {
+      // Fallback for older logic (redundant but safe)
+      evidence = scores._evidence;
+  }
+
   // Clean up scores to ensure it only contains numbers (remove hidden fields)
-  if (scores && (scores._feedback || scores._feedbackDate)) {
+  if (scores && (scores._feedback || scores._feedbackDate || scores._evidence)) {
       const cleanScores = { ...scores };
       delete cleanScores._feedback;
       delete cleanScores._feedbackDate;
+      delete cleanScores._evidence;
       scores = cleanScores;
   }
   
@@ -45,7 +56,7 @@ const normalizeUser = (u: any): User => {
     ...u,
     // Handle potential case sensitivity issues for isPremium
     isPremium: u.isPremium !== undefined ? u.isPremium : (u.ispremium !== undefined ? u.ispremium : false),
-    workloadEvidence_v2: parseJsonIfNeeded(u.workloadEvidence_v2 || u.workloadevidence_v2),
+    workloadEvidence_v2: evidence,
     workloadScores_v2: scores,
     workloadFeedback_v2: feedback,
     workloadFeedbackDate_v2: feedbackDate
@@ -269,11 +280,13 @@ export const supabaseService = {
     // PACKING STRATEGY:
     // Since 'workloadFeedback_v2' and 'workloadFeedbackDate_v2' columns are missing in the DB,
     // we pack them into 'workloadScores_v2' (JSONB) before saving.
-    if (sanitizedUser.workloadFeedback_v2 || sanitizedUser.workloadFeedbackDate_v2) {
+    // ALSO PACKING 'workloadEvidence_v2' just in case that column is also missing/problematic.
+    if (sanitizedUser.workloadFeedback_v2 || sanitizedUser.workloadFeedbackDate_v2 || sanitizedUser.workloadEvidence_v2) {
         sanitizedUser.workloadScores_v2 = {
             ...(sanitizedUser.workloadScores_v2 || {}),
             _feedback: sanitizedUser.workloadFeedback_v2,
-            _feedbackDate: sanitizedUser.workloadFeedbackDate_v2
+            _feedbackDate: sanitizedUser.workloadFeedbackDate_v2,
+            _evidence: sanitizedUser.workloadEvidence_v2
         } as any;
     }
 
@@ -284,8 +297,18 @@ export const supabaseService = {
     delete (payload as any).workloadFeedbackDate_v2;
     delete (payload as any).workloadfeedback_v2; // Handle potential lowercase
     delete (payload as any).workloadfeedbackdate_v2; // Handle potential lowercase
+    
+    // Also remove evidence from payload root if we packed it (to avoid "column not found" error)
+    // We keep it ONLY if we are sure the column exists. But to be safe, we rely on the packed version.
+    // However, if the column DOES exist, we might want to populate it too? 
+    // No, duplicate data is bad. Let's stick to the packed version if we are unsure.
+    // The user reported "Could not find column", so likely schema is drifting.
+    // Let's remove it from root payload to be safe.
+    delete (payload as any).workloadEvidence_v2;
+    delete (payload as any).workloadevidence_v2;
+            delete (payload as any).displayName; // Fix: Remove displayName which might be added by auth providers but not in DB
 
-    const { error } = await supabase
+            const { error } = await supabase
       .from(USERS_TABLE)
       .upsert(payload, { onConflict: 'nip' });
     
@@ -324,7 +347,22 @@ export const supabaseService = {
       .single();
     
     if (error || !data) return null;
-    return data as User;
+    return normalizeUser(data);
+  },
+
+  // Get All Principals by School (Safe for duplicates)
+  getPrincipalsBySchool: async (schoolName: string): Promise<User[]> => {
+    const { data, error } = await supabase
+      .from(USERS_TABLE)
+      .select('*')
+      .eq('role', 'kepala-sekolah')
+      .eq('school', schoolName);
+    
+    if (error) {
+        console.error('Error fetching principals for school:', error);
+        return [];
+    }
+    return (data || []).map(normalizeUser);
   },
 
   // Get Kepsek by School
@@ -337,7 +375,7 @@ export const supabaseService = {
       .single();
 
     if (error || !data) return null;
-    return data as User;
+    return normalizeUser(data);
   },
 
   // Get Pengawas by School
@@ -353,7 +391,7 @@ export const supabaseService = {
       .maybeSingle();
 
     if (error || !data) return null;
-    return data as User;
+    return normalizeUser(data);
   },
 
   // Update Heartbeat
@@ -405,7 +443,7 @@ export const supabaseService = {
 
      return subscribeWithRetry(
        `supervisions:${school}`,
-       { event: '*', schema: 'public', table: SUPERVISIONS_TABLE, filter: `school=eq.${school}` },
+       { event: '*', schema: 'public', table: SUPERVISIONS_TABLE, filter: `school=eq."${school}"` },
        () => {
             fetch();
        },
@@ -465,9 +503,9 @@ export const supabaseService = {
 
     return subscribeWithRetry(
       `generated_docs:${school}`,
-      { event: '*', schema: 'public', table: GENERATED_DOCS_TABLE, filter: `school=eq.${school}` },
+      { event: '*', schema: 'public', table: GENERATED_DOCS_TABLE, filter: `school=eq."${school}"` },
       () => {
-           fetch();
+        fetch();
       },
       undefined,
       fetch
