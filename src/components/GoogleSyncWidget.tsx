@@ -39,8 +39,7 @@ const GoogleSyncWidget = ({ user }: GoogleSyncWidgetProps) => {
 
   const isProduction = import.meta.env.PROD;
   const clientId = googleDriveService.isMock ? 'MOCK' : '516566514996...';
-  const missingKeys = false; // Hardcoded keys are now present in service
-
+  
   useEffect(() => {
     // Always configured now since we have hardcoded keys
     setIsConfigured(true);
